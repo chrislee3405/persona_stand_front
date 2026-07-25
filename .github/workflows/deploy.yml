@@ -4,6 +4,7 @@ on: # Defines the event that triggers workflow.
   push:
     branches:
       - main # Automatically run this workflow every time code is pushed or merged into the main branch.
+      - trial
 
 permissions:
   id-token: write  # Grants GitHub permission to request a short-lived JWT from GitHub OIDC provider.
