@@ -8,11 +8,6 @@ interface Message {
   sender: 'user' | 'backend';
 }
 
-// Creates schema for invite code
-interface Code {
-  code: string;
-}
-
 // Declares and exports the main component function so it can be loaded and rendered by other parts of the app.
 export default function Chatroom() {
 
@@ -55,13 +50,13 @@ export default function Chatroom() {
 
       let response;
       if (!isInvite) {//Route the request based on the user's invite status
-        response = await fetch('http://localhost:8000/api/guestchat', {
+        response = await fetch('/api/guestchat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: textToSend, sender: 'user' })
         });
       } else {
-        response = await fetch('http://localhost:8000/api/invitechat', {
+        response = await fetch('/api/invitechat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: textToSend, sender: 'user' })
@@ -101,7 +96,7 @@ export default function Chatroom() {
     setInputCode(''); // Clears the code box instead of the chat box!
 
     try {
-      const response = await fetch('http://localhost:8000/code', { // Send raw code to backend first
+      const response = await fetch('/api/code', { // Send raw code to backend first
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input_code: codeToSend })

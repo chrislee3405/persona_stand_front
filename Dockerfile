@@ -1,24 +1,26 @@
-# --- Stage 1: Build React static files ---
-FROM node:20-alpine AS builder
+# --- Stage 1: Build ---
+FROM node:20-alpine as builder
 
 WORKDIR /app
 
-# Copies package.json & package-lock.json (where vite is listed as a dependency)
 COPY package*.json ./
 RUN npm ci
 
 COPY . .
-
-# "npm run build" triggers your package.json script: "build": "vite build"
 RUN npm run build
 
-
-# --- Stage 2: Serve static build with Nginx ---
+# --- Stage 2: Production ---
 FROM nginx:alpine
 
-# Copy compiled static files produced by Vite into Nginx's public directory
+# Copy nginx config for SPA routing
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
