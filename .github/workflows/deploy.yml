@@ -18,6 +18,15 @@ jobs:
       - name: Checkout Code # just a name as an indicator for reader
         uses: actions/checkout@v4 # official GitHub action to clone project's source code into the VM's working directory
 
+        
+      - name: Debug AWS Role ARN
+        run: |
+          echo "The AWS Role ARN is: ${{ vars.AWS_ROLE_ARN }}"
+          echo "The AWS aws-region is: ${{ vars.AWS_REGION }}"
+          echo "The repo is: ${{ vars.ECR_REPOSITORY }}"
+
+          
+
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4 # AWS's official GitHub action to authenticate
         with:
