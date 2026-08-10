@@ -4,6 +4,8 @@ import './App.css'
 import Navbar from './components/navbar.tsx'
 import Footer from './components/footer.tsx'
 
+import { ChatProvider } from './context/ChatContext.tsx'
+
 import Qualifications from './pages/Qualifications.tsx'
 import Journey from './pages/Journey.tsx'
 import Contact from './pages/Contact.tsx'
@@ -52,7 +54,11 @@ function RootLayout() {
 
 
 function App() {
-  return <RouterProvider router={router} />
+  return (
+    <ChatProvider> 
+      <RouterProvider router={router} />
+    </ChatProvider> 
+    )
 }
 
 export default App

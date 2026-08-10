@@ -1,5 +1,6 @@
 import { useState } from 'react'; //react interactive feature engine
 import type { BaseSyntheticEvent } from 'react';
+import { useChat } from '../context/ChatContext';
 
 // Creates schema for message object
 interface Message {
@@ -13,10 +14,7 @@ export default function Chatroom() {
 
   // Creates an array in React memory to track the chat history.
   // setMessages is the specific function being called whenever needed to append a new message.
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 1, text: "System connected.", sender: 'backend' }, // pre-filled with two default system messages. 
-    { id: 2, text: "Hello!", sender: 'backend' }
-  ]);
+  const { messages, setMessages, setCode } = useChat();
 
   const [inputMessage, setInputMessage] = useState(''); //Creates a string variable in memory to track exactly what characters the user has typed inside the text box. It starts as an empty string ('').
   const [isSending, setIsSending] = useState(false); // Tracks if currently waiting for the backend to reply
@@ -112,6 +110,7 @@ export default function Chatroom() {
         setIsInvite(true);
         setIsWrongCode(false);
         setInputCode(data.returned_result);
+        setCode(codeToSend);
       }
 
 
