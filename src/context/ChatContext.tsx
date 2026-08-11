@@ -12,6 +12,8 @@ interface ChatContextType {
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   code: string;
   setCode: React.Dispatch<React.SetStateAction<string>>;
+  inputCode: string;
+  setInputCode: React.Dispatch<React.SetStateAction<string>>;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -24,7 +26,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       { id: 2, text: "Hello!", sender: 'backend' }
     ];
   });
-  const [code, setCode] = useState('');
+
+  const [code, setCode] = useState(() => sessionStorage.getItem('chat_code') || '');
+  const [inputCode, setInputCode] = useState(() => sessionStorage.getItem('chat_inputCode') || sessionStorage.getItem('chat_code') || '');
+
   const messagesRef = useRef(messages);
 
   useEffect(() => {
@@ -32,22 +37,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sessionStorage.setItem('chat_messages', JSON.stringify(messages));
   }, [messages]);
 
-  // Fires on real tab/window close, not on in-app route changes
+  useEffect(() => {
+    sessionStorage.setItem('chat_code', code);
+  }, [code]);
+
+  useEffect(() => {
+    sessionStorage.setItem('chat_inputCode', inputCode);
+  }, [inputCode]);
+
   useEffect(() => {
     const savePayload = () => {
       const payload = JSON.stringify({ content: messagesRef.current, code });
       navigator.sendBeacon('/api/save-conversation', new Blob([payload], { type: 'application/json' }));
     };
 
-  window.addEventListener('pagehide', savePayload);
+    window.addEventListener('pagehide', savePayload);
 
-  return () => {
-    window.removeEventListener('pagehide', savePayload);
-  };
-}, [code]);
+    return () => {
+      window.removeEventListener('pagehide', savePayload);
+    };
+  }, [code]);
 
   return (
-    <ChatContext.Provider value={{ messages, setMessages, code, setCode }}>
+    <ChatContext.Provider value={{ messages, setMessages, code, setCode, inputCode, setInputCode }}>
       {children}
     </ChatContext.Provider>
   );

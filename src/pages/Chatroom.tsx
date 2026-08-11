@@ -1,159 +1,115 @@
-import { useState } from 'react'; //react interactive feature engine
+import { useState } from 'react';
 import type { BaseSyntheticEvent } from 'react';
 import { useChat } from '../context/ChatContext';
 
-// Creates schema for message object
 interface Message {
   id: number;
   text: string;
   sender: 'user' | 'backend';
 }
 
-// Declares and exports the main component function so it can be loaded and rendered by other parts of the app.
 export default function Chatroom() {
+  const { messages, setMessages, code, setCode, inputCode, setInputCode } = useChat();
 
-  // Creates an array in React memory to track the chat history.
-  // setMessages is the specific function being called whenever needed to append a new message.
-  const { messages, setMessages, setCode } = useChat();
+  const [inputMessage, setInputMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
 
-  const [inputMessage, setInputMessage] = useState(''); //Creates a string variable in memory to track exactly what characters the user has typed inside the text box. It starts as an empty string ('').
-  const [isSending, setIsSending] = useState(false); // Tracks if currently waiting for the backend to reply
+  const isVerified = Boolean(code);
 
-
-  const [inputCode, setInputCode] = useState('');
-  const [isVerifyingCode, setIsVerifyingCode] = useState(false); // check the Verifying process, only true when Verifying is processing
-  const [isInvite, setIsInvite] = useState(false); // check the Verify status, true after code have valid Verify result
-  const [isWrongCode, setIsWrongCode] = useState(false);
-
-
-
-  // The processing logic that triggers when the form gets sent. 'e'  holds the submission action details.
   const handleSend = async (e: BaseSyntheticEvent) => {
-
-    e.preventDefault(); // prevent browser dafaultly refresh every time send is clicked
-    if (!inputMessage.trim() || isSending) return;// Check if input is empty or isSending is True, runs return execution break if so
+    e.preventDefault();
+    if (!inputMessage.trim() || isSending) return;
     setIsSending(true);
 
-    const newMessage: Message = { // Constructs a brand new message object using the input field data.
-      id: Date.now(), // generates a unique ID number based on the exact millisecond the message was created.
+    const newMessage: Message = {
+      id: Date.now(),
       text: inputMessage,
       sender: 'user'
     };
 
-    setMessages(prev => [...prev, newMessage]); // INSTANTLY show the user's message on the chat window 
-    const textToSend = inputMessage; // Cache the input string to send to the backend
-    setInputMessage(''); // clear the input bar immediately
+    setMessages(prev => [...prev, newMessage]);
+    const textToSend = inputMessage;
+    setInputMessage('');
 
     try {
-
-      let response;
-      if (!isInvite) {//Route the request based on the user's invite status
-        response = await fetch('/api/guestchat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: textToSend, sender: 'user' })
-        });
-      } else {
-        response = await fetch('/api/invitechat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: textToSend, sender: 'user' })
-        });
-      }
+      const endpoint = isVerified ? '/api/invitechat' : '/api/guestchat';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToSend, sender: 'user' })
+      });
 
       if (!response.ok) {
         throw new Error(`Server responded with status code: ${response.status}`);
       }
 
-      const backendMessage: Message = await response.json();// Extract the reply content object payload returned from the server
-      setMessages(prev => [...prev, backendMessage]); // Push the reply message into React state array
+      const backendMessage: Message = await response.json();
+      setMessages(prev => [...prev, backendMessage]);
 
     } catch (error) {
       console.error("Server connection dropped:", error);
-      const errorMessage: Message = { // Create a pre-set system message when error occur
-        id: Date.now() + 1, // Add a tiny offset to ensure absolute uniqueness
+      const errorMessage: Message = {
+        id: Date.now() + 1,
         text: "Connection error: Failed to receive response from the negotiation terminal server.",
-        sender: 'backend' // Appears labeled as the system assistant
+        sender: 'backend'
       };
-      setMessages(prev => [...prev, errorMessage]); // Push the system error message directly into the chat window
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
-      setIsSending(false); //Unlocks the input field and button whether the request succeeded OR failed!
+      setIsSending(false);
     }
   };
 
-
-
-
   const handleCode = async (e: BaseSyntheticEvent) => {
-
-    e.preventDefault(); // prevent browser dafaultly refresh every time send is clicked
-    if (!inputCode.trim() || isInvite || isVerifyingCode) return; // return if input is empty; verifying is processing; user already verified
+    e.preventDefault();
+    if (!inputCode.trim() || isVerified || isVerifyingCode) return;
     setIsVerifyingCode(true);
 
-    const codeToSend = inputCode.trim(); // Caches inputCode, not inputMessage!
-    setInputCode(''); // Clears the code box instead of the chat box!
+    const codeToSend = inputCode.trim();
 
     try {
-      const response = await fetch('/api/code', { // Send raw code to backend first
+      const response = await fetch('/api/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input_code: codeToSend })
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        setIsWrongCode(true)
-        throw new Error(`Server responded with status code: ${response.status}`);
+        alert("Incorrect code! Please check and try again.");
       } else {
-        // If reached here, validation passed perfectly!
-        setIsInvite(true);
-        setIsWrongCode(false);
-        setInputCode(data.returned_result);
         setCode(codeToSend);
+        setInputCode(codeToSend);
       }
-
-
     } catch (error) {
       console.error("Server validation error:", error);
-      if (!isWrongCode) {
-        alert("System connection error. Please verify network access.");
-      }
+      alert("Incorrect code or system connection error. Please try again.");
     } finally {
       setIsVerifyingCode(false);
     }
-  }
-
-  // ************************************************************************************************************************
-  // ************************************************************************************************************************
+  };
 
   return (
     <div>
-
       {/* Invite code Controls */}
       <form onSubmit={handleCode}>
         <input
           type="text"
           placeholder={
-            isWrongCode
-              ? "Invite code not found! Try again."
-              : isInvite
-                ? "Access Granted via Invite"
-                : isVerifyingCode
-                  ? "Verifying code..."
-                  : "Type your invite code here (if any)"
+            isVerified
+              ? `Access Granted via ${code}`
+              : isVerifyingCode
+                ? "Verifying code..."
+                : "Type your invite code here (if any)"
           }
           value={inputCode}
-          onChange={(e) => {
-            setInputCode(e.target.value);
-            if (isWrongCode) setIsWrongCode(false);
-          }}
-          disabled={isVerifyingCode || isInvite}
+          onChange={(e) => setInputCode(e.target.value)}
+          disabled={isVerifyingCode || isVerified}
         />
-        <button type="submit" disabled={isVerifyingCode || isInvite}>
-          {isVerifyingCode ? 'Checking...' : 'Verify Code'}
+        <button type="submit" disabled={isVerifyingCode || isVerified}>
+          {isVerifyingCode ? 'Checking...' : isVerified ? 'Verified' : 'Verify CODE'}
         </button>
       </form>
+
 
 
 
@@ -167,9 +123,6 @@ export default function Chatroom() {
         ))}
       </div>
 
-
-
-
       {/* Chat Form Controls */}
       <form onSubmit={handleSend}>
         <input
@@ -177,9 +130,9 @@ export default function Chatroom() {
           placeholder={isSending ? "Waiting for system reply..." : "Type your message here..."}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          disabled={isSending} // <-- Disables the text input bar while loading
+          disabled={isSending}
         />
-        <button type="submit" disabled={isSending}> {/* <-- Disables the button while loading */}
+        <button type="submit" disabled={isSending}>
           {isSending ? 'Sending...' : 'Send'}
         </button>
       </form>
