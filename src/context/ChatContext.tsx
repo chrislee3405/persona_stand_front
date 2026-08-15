@@ -1,8 +1,8 @@
-import { createContext, useContext, useState, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 
-interface Message {
-  id: number;
+export interface Message {
+  id: string;
   text: string;
   sender: 'user' | 'backend';
 }
@@ -14,6 +14,8 @@ interface ChatContextType {
   setCode: React.Dispatch<React.SetStateAction<string>>;
   inputCode: string;
   setInputCode: React.Dispatch<React.SetStateAction<string>>;
+  conversationId: string | null;
+  setConversationId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -22,18 +24,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = sessionStorage.getItem('chat_messages');
     return saved ? JSON.parse(saved) : [
-      { id: 1, text: "System connected.", sender: 'backend' },
-      { id: 2, text: "Hello!", sender: 'backend' }
+      { id: 'welcome-1', text: "System connected.", sender: 'backend' },
+      { id: 'welcome-2', text: "Hello!", sender: 'backend' }
     ];
   });
 
   const [code, setCode] = useState(() => sessionStorage.getItem('chat_code') || '');
-  const [inputCode, setInputCode] = useState(() => sessionStorage.getItem('chat_inputCode') || sessionStorage.getItem('chat_code') || '');
+  const [inputCode, setInputCode] = useState(
+    () => sessionStorage.getItem('chat_inputCode') || sessionStorage.getItem('chat_code') || ''
+  );
 
-  const messagesRef = useRef(messages);
+  // No longer generated client-side. null until the backend assigns one
+  // on the first message of this session; persisted afterward so a page
+  // refresh continues the same conversation instead of starting a new one.
+  const [conversationId, setConversationId] = useState<string | null>(
+    () => sessionStorage.getItem('chat_conversationId')
+  );
 
   useEffect(() => {
-    messagesRef.current = messages;
     sessionStorage.setItem('chat_messages', JSON.stringify(messages));
   }, [messages]);
 
@@ -46,20 +54,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [inputCode]);
 
   useEffect(() => {
-    const savePayload = () => {
-      const payload = JSON.stringify({ content: messagesRef.current, code });
-      navigator.sendBeacon('/api/save-conversation', new Blob([payload], { type: 'application/json' }));
-    };
-
-    window.addEventListener('pagehide', savePayload);
-
-    return () => {
-      window.removeEventListener('pagehide', savePayload);
-    };
-  }, [code]);
+    if (conversationId) {
+      sessionStorage.setItem('chat_conversationId', conversationId);
+    }
+  }, [conversationId]);
 
   return (
-    <ChatContext.Provider value={{ messages, setMessages, code, setCode, inputCode, setInputCode }}>
+    <ChatContext.Provider
+      value={{
+        messages, setMessages,
+        code, setCode,
+        inputCode, setInputCode,
+        conversationId, setConversationId
+      }}
+    >
       {children}
     </ChatContext.Provider>
   );

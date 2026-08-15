@@ -1,15 +1,22 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { BaseSyntheticEvent } from 'react';
-import { useChat } from '../context/ChatContext';
+import { useChat, type Message } from '../context/ChatContext';
 
-interface Message {
-  id: number;
-  text: string;
-  sender: 'user' | 'backend';
+const PAIRS_BEFORE_SUMMARIZE = 5;
+
+function generateMessageId(): string {
+  return (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+    ? crypto.randomUUID()
+    : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export default function Chatroom() {
-  const { messages, setMessages, code, setCode, inputCode, setInputCode } = useChat();
+  const {
+    messages, setMessages,
+    code, setCode,
+    inputCode, setInputCode,
+    conversationId, setConversationId
+  } = useChat();
 
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -17,16 +24,37 @@ export default function Chatroom() {
 
   const isVerified = Boolean(code);
 
+  const pendingPairsRef = useRef<{ user: Message; backend: Message }[]>([]);
+
+  const createMessage = (text: string, sender: Message['sender']): Message => ({
+    id: generateMessageId(),
+    text,
+    sender
+  });
+
+  const flushForSummarization = (pairs: { user: Message; backend: Message }[]) => {
+    if (!conversationId) return; // shouldn't happen post-first-message, but guard anyway
+    fetch('/api/summarize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        code: code || null,
+        pairs: pairs.map(p => ({ user: p.user.text, backend: p.backend.text }))
+      })
+    }).catch(error => {
+      console.error('Summarization request failed:', error);
+    });
+  };
+
+
+  
   const handleSend = async (e: BaseSyntheticEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || isSending) return;
     setIsSending(true);
 
-    const newMessage: Message = {
-      id: Date.now(),
-      text: inputMessage,
-      sender: 'user'
-    };
+    const newMessage = createMessage(inputMessage, 'user');
 
     setMessages(prev => [...prev, newMessage]);
     const textToSend = inputMessage;
@@ -34,26 +62,52 @@ export default function Chatroom() {
 
     try {
       const endpoint = isVerified ? '/api/invitechat' : '/api/guestchat';
+
+      const requestBody = {
+        text: textToSend,
+        sender: 'user',
+        ...(conversationId ? { conversationId } : {}),
+        ...(isVerified ? { code } : {})
+      };
+      // alert('Sending to invitechat: ' + JSON.stringify(requestBody, null, 2));
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToSend, sender: 'user' })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         throw new Error(`Server responded with status code: ${response.status}`);
       }
 
-      const backendMessage: Message = await response.json();
+      const data = await response.json();
+      if (!data || typeof data.text !== 'string' || typeof data.conversationId !== 'string') {
+        throw new Error(`Malformed response: ${JSON.stringify(data)}`);
+      }
+
+      // Capture the backend-assigned id — no-op after the first message,
+      // since it stays the same for the rest of the session.
+      if (data.conversationId !== conversationId) {
+        setConversationId(data.conversationId);
+      }
+
+      const backendMessage = createMessage(data.text, 'backend');
       setMessages(prev => [...prev, backendMessage]);
+
+      pendingPairsRef.current.push({ user: newMessage, backend: backendMessage });
+      if (pendingPairsRef.current.length >= PAIRS_BEFORE_SUMMARIZE) {
+        const pairsToFlush = pendingPairsRef.current;
+        pendingPairsRef.current = [];
+        flushForSummarization(pairsToFlush);
+      }
 
     } catch (error) {
       console.error("Server connection dropped:", error);
-      const errorMessage: Message = {
-        id: Date.now() + 1,
-        text: "Connection error: Failed to receive response from the negotiation terminal server.",
-        sender: 'backend'
-      };
+      const errorMessage = createMessage(
+        "Connection error: Failed to receive response from the negotiation terminal server.",
+        'backend'
+      );
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsSending(false);
@@ -71,18 +125,23 @@ export default function Chatroom() {
       const response = await fetch('/api/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input_code: codeToSend })
+        body: JSON.stringify({
+          input_code: codeToSend,
+          conversation_id: conversationId  // may be null if no message sent yet — that's fine
+        })
       });
 
       if (!response.ok) {
         alert("Incorrect code! Please check and try again.");
       } else {
-        setCode(codeToSend);
-        setInputCode(codeToSend);
+        const data = await response.json();
+        const verifiedCode = data.returned_result ?? codeToSend;
+        setCode(verifiedCode);
+        setInputCode(verifiedCode);
       }
     } catch (error) {
       console.error("Server validation error:", error);
-      alert("Incorrect code or system connection error. Please try again.");
+      alert("system connection error. Please try again.");
     } finally {
       setIsVerifyingCode(false);
     }
