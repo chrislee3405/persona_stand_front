@@ -69,7 +69,7 @@ export default function Chatroom() {
         ...(conversationId ? { conversationId } : {}),
         ...(isVerified ? { code } : {})
       };
-      // alert('Sending to invitechat: ' + JSON.stringify(requestBody, null, 2));
+      alert('Sending to invitechat: ' + JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(endpoint, {
         method: 'POST',
