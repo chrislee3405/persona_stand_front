@@ -29,6 +29,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ];
   });
 
+  // `code` is kept only so the UI can show "Access Granted via X" after a
+  // refresh. It is NOT used as an auth credential anymore — the actual
+  // authorization lives in an httpOnly session cookie the backend sets on
+  // verification, which this JS (and sessionStorage, and any XSS payload)
+  // cannot read or forge. Never resend `code` to the backend as proof of
+  // anything; the server already knows this session is verified.
   const [code, setCode] = useState(() => sessionStorage.getItem('chat_code') || '');
   const [inputCode, setInputCode] = useState(
     () => sessionStorage.getItem('chat_inputCode') || sessionStorage.getItem('chat_code') || ''
@@ -37,6 +43,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // No longer generated client-side. null until the backend assigns one
   // on the first message of this session; persisted afterward so a page
   // refresh continues the same conversation instead of starting a new one.
+  // This value is a convenience for the UI/routing only — it is NOT proof
+  // of ownership. The backend must independently confirm (via the session
+  // cookie) that the caller actually owns this conversationId before
+  // reading or writing to it, since a user can freely edit this in
+  // sessionStorage or devtools.
   const [conversationId, setConversationId] = useState<string | null>(
     () => sessionStorage.getItem('chat_conversationId')
   );

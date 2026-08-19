@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+// import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { BaseSyntheticEvent } from 'react';
 import { useChat, type Message } from '../context/ChatContext';
 
-const PAIRS_BEFORE_SUMMARIZE = 5;
+// const PAIRS_BEFORE_SUMMARIZE = 5;
 
 function generateMessageId(): string {
   return (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -24,7 +25,7 @@ export default function Chatroom() {
 
   const isVerified = Boolean(code);
 
-  const pendingPairsRef = useRef<{ user: Message; backend: Message }[]>([]);
+  // const pendingPairsRef = useRef<{ user: Message; backend: Message }[]>([]);
 
   const createMessage = (text: string, sender: Message['sender']): Message => ({
     id: generateMessageId(),
@@ -32,20 +33,20 @@ export default function Chatroom() {
     sender
   });
 
-  const flushForSummarization = (pairs: { user: Message; backend: Message }[]) => {
-    if (!conversationId) return; // shouldn't happen post-first-message, but guard anyway
-    fetch('/api/summarize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        conversation_id: conversationId,
-        code: code || null,
-        pairs: pairs.map(p => ({ user: p.user.text, backend: p.backend.text }))
-      })
-    }).catch(error => {
-      console.error('Summarization request failed:', error);
-    });
-  };
+  // const flushForSummarization = (pairs: { user: Message; backend: Message }[]) => {
+  //   if (!conversationId) return; // shouldn't happen post-first-message, but guard anyway
+  //   fetch('/api/summarize', {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     credentials: 'include', // server must verify this session actually owns conversation_id
+  //     body: JSON.stringify({
+  //       conversation_id: conversationId,
+  //       pairs: pairs.map(p => ({ user: p.user.text, backend: p.backend.text }))
+  //     })
+  //   }).catch(error => {
+  //     console.error('Summarization request failed:', error);
+  //   });
+  // };
 
 
   
@@ -63,17 +64,23 @@ export default function Chatroom() {
     try {
       const endpoint = isVerified ? '/api/invitechat' : '/api/guestchat';
 
+      // Auth no longer travels in the body. The server identifies the
+      // caller (guest or invite-code) from the httpOnly session cookie
+      // set during /api/code or on first contact, and independently
+      // checks that conversationId is actually owned by that session
+      // before reading/writing anything. conversationId is sent only
+      // so the server knows which conversation to continue — it is not
+      // trusted as proof of ownership.
       const requestBody = {
         text: textToSend,
         sender: 'user',
-        ...(conversationId ? { conversationId } : {}),
-        ...(isVerified ? { code } : {})
+        ...(conversationId ? { conversationId } : {})
       };
-      alert('Sending to invitechat: ' + JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // send the httpOnly session cookie
         body: JSON.stringify(requestBody)
       });
 
@@ -95,12 +102,12 @@ export default function Chatroom() {
       const backendMessage = createMessage(data.text, 'backend');
       setMessages(prev => [...prev, backendMessage]);
 
-      pendingPairsRef.current.push({ user: newMessage, backend: backendMessage });
-      if (pendingPairsRef.current.length >= PAIRS_BEFORE_SUMMARIZE) {
-        const pairsToFlush = pendingPairsRef.current;
-        pendingPairsRef.current = [];
-        flushForSummarization(pairsToFlush);
-      }
+      // pendingPairsRef.current.push({ user: newMessage, backend: backendMessage });
+      // if (pendingPairsRef.current.length >= PAIRS_BEFORE_SUMMARIZE) {
+      //   const pairsToFlush = pendingPairsRef.current;
+      //   pendingPairsRef.current = [];
+      //   flushForSummarization(pairsToFlush);
+      // }
 
     } catch (error) {
       console.error("Server connection dropped:", error);
@@ -125,6 +132,7 @@ export default function Chatroom() {
       const response = await fetch('/api/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // required: server sets the verified session cookie in the response
         body: JSON.stringify({
           input_code: codeToSend,
           conversation_id: conversationId  // may be null if no message sent yet — that's fine
@@ -135,6 +143,9 @@ export default function Chatroom() {
         alert("Incorrect code! Please check and try again.");
       } else {
         const data = await response.json();
+        // `code` is now display-only ("Access Granted via X") — it is never
+        // sent back to the server as proof of anything. The server already
+        // upgraded this session to verified via the Set-Cookie on this response.
         const verifiedCode = data.returned_result ?? codeToSend;
         setCode(verifiedCode);
         setInputCode(verifiedCode);
