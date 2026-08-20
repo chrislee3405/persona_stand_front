@@ -25,28 +25,11 @@ export default function Chatroom() {
 
   const isVerified = Boolean(code);
 
-  // const pendingPairsRef = useRef<{ user: Message; backend: Message }[]>([]);
-
   const createMessage = (text: string, sender: Message['sender']): Message => ({
     id: generateMessageId(),
     text,
     sender
   });
-
-  // const flushForSummarization = (pairs: { user: Message; backend: Message }[]) => {
-  //   if (!conversationId) return; // shouldn't happen post-first-message, but guard anyway
-  //   fetch('/api/summarize', {
-  //     method: 'POST',
-  //     headers: { 'Content-Type': 'application/json' },
-  //     credentials: 'include', // server must verify this session actually owns conversation_id
-  //     body: JSON.stringify({
-  //       conversation_id: conversationId,
-  //       pairs: pairs.map(p => ({ user: p.user.text, backend: p.backend.text }))
-  //     })
-  //   }).catch(error => {
-  //     console.error('Summarization request failed:', error);
-  //   });
-  // };
 
 
   
@@ -102,12 +85,6 @@ export default function Chatroom() {
       const backendMessage = createMessage(data.text, 'backend');
       setMessages(prev => [...prev, backendMessage]);
 
-      // pendingPairsRef.current.push({ user: newMessage, backend: backendMessage });
-      // if (pendingPairsRef.current.length >= PAIRS_BEFORE_SUMMARIZE) {
-      //   const pairsToFlush = pendingPairsRef.current;
-      //   pendingPairsRef.current = [];
-      //   flushForSummarization(pairsToFlush);
-      // }
 
     } catch (error) {
       console.error("Server connection dropped:", error);
