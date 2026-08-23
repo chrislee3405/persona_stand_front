@@ -45,27 +45,39 @@ export default function Chatroom() {
     setInputMessage('');
 
     try {
-      const endpoint = isVerified ? '/api/invitechat' : '/api/guestchat';
-
       // Auth no longer travels in the body. The server identifies the
       // caller (guest or invite-code) from the httpOnly session cookie
       // set during /api/code or on first contact, and independently
       // checks that conversationId is actually owned by that session
       // before reading/writing anything. conversationId is sent only
       // so the server knows which conversation to continue — it is not
-      // trusted as proof of ownership.
+      // trusted as proof of ownership. (A stale/invalid conversationId
+      // is handled entirely server-side too — it transparently starts a
+      // new conversation and returns its id, rather than erroring.)
       const requestBody = {
         text: textToSend,
-        sender: 'user',
         ...(conversationId ? { conversationId } : {})
       };
 
-      const response = await fetch(endpoint, {
+      const postChat = (endpoint: string) => fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include', // send the httpOnly session cookie
         body: JSON.stringify(requestBody)
       });
+
+      let response = await postChat(isVerified ? '/api/invitechat' : '/api/guestchat');
+
+      if (response.status === 401 && isVerified) {
+        // This tab still has an invite code cached, but the server says
+        // this session's verification isn't valid (e.g. the session
+        // cookie expired or was cleared). Drop the stale code so the UI
+        // reverts to "not verified" and let the user re-verify later,
+        // and treat this message as guest so it isn't lost.
+        setCode('');
+        setInputCode('');
+        response = await postChat('/api/guestchat');
+      }
 
       if (!response.ok) {
         throw new Error(`Server responded with status code: ${response.status}`);
