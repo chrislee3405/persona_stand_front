@@ -11,6 +11,28 @@ function generateMessageId(): string {
     : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Tunable, mirrors the backend's _MIN_CHARS_PER_TURN hyperparameter in spirit:
+// each turn is revealed after a delay proportional to its length, simulating
+// a person typing it out, rather than all turns appearing at once.
+const TYPING_MS_PER_CHAR = 40;
+const TYPING_MIN_MS = 400;
+const TYPING_MAX_MS = 3000;
+// +/- this fraction of the base delay, randomized per turn -- a perfectly
+// deterministic length-proportional delay feels robotic; real typing speed
+// varies turn to turn.
+const TYPING_JITTER_RATIO = 0.25;
+
+function typingDelayFor(text: string): number {
+  const base = text.length * TYPING_MS_PER_CHAR;
+  const jitterRange = base * TYPING_JITTER_RATIO;
+  const jittered = base + (Math.random() * 2 - 1) * jitterRange;
+  return Math.min(Math.max(jittered, TYPING_MIN_MS), TYPING_MAX_MS);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export default function Chatroom() {
   const {
     messages, setMessages,
@@ -84,7 +106,13 @@ export default function Chatroom() {
       }
 
       const data = await response.json();
-      if (!data || typeof data.text !== 'string' || typeof data.conversationId !== 'string') {
+      if (
+        !data ||
+        !Array.isArray(data.turns) ||
+        data.turns.length === 0 ||
+        !data.turns.every((turn: unknown) => typeof turn === 'string' && turn.trim()) ||
+        typeof data.conversationId !== 'string'
+      ) {
         throw new Error(`Malformed response: ${JSON.stringify(data)}`);
       }
 
@@ -94,8 +122,22 @@ export default function Chatroom() {
         setConversationId(data.conversationId);
       }
 
-      const backendMessage = createMessage(data.text, 'backend');
-      setMessages(prev => [...prev, backendMessage]);
+      // Reveal each turn as its own bubble with a typing-speed delay between
+      // them, instead of dumping the whole reply in one message — mimics a
+      // person sending several texts in a row. isSending (and therefore the
+      // disabled input) stays true for the whole sequence via the outer
+      // try/finally, so the user can't send a new message mid-reveal. The
+      // first turn skips the delay -- the backend's own processing time
+      // (topic matching, generation, gate verification) already covers the
+      // "thinking" pause, so delaying it again would just feel sluggish.
+      const turns = data.turns as string[];
+      for (let i = 0; i < turns.length; i++) {
+        if (i > 0) {
+          await sleep(typingDelayFor(turns[i]));
+        }
+        const backendMessage = createMessage(turns[i], 'backend');
+        setMessages(prev => [...prev, backendMessage]);
+      }
 
 
     } catch (error) {
