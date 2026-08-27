@@ -1,7 +1,12 @@
 // import { useRef, useState } from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { BaseSyntheticEvent } from 'react';
 import { useChat, type Message } from '../context/ChatContext';
+
+// Shown only if the GET /api/consent response has no conditionText at all
+// (e.g. consent_policy is somehow empty) -- should be rare in practice
+// since app/main.py seeds an initial policy row on startup.
+const CONSENT_TEXT_UNAVAILABLE = "Consent terms are currently unavailable. Please try again later.";
 
 // const PAIRS_BEFORE_SUMMARIZE = 5;
 
@@ -21,6 +26,22 @@ const TYPING_MAX_MS = 3000;
 // deterministic length-proportional delay feels robotic; real typing speed
 // varies turn to turn.
 const TYPING_JITTER_RATIO = 0.25;
+
+// Mirrors the backend's _MAX_PENDING_PER_SESSION (rate_control_service.py)
+// so the UI can warn instantly instead of waiting on a round trip -- but
+// the backend's cap is the real enforcement, this one is UX only and can
+// be bypassed by calling the API directly, so it must match, not replace, it.
+const MAX_PENDING_MESSAGES = 3;
+
+// Mirrors the backend's MAX_MESSAGE_LENGTH (chat_service.py) -- used both
+// as an <input maxLength> (stops typing/pasting past the limit) and as a
+// belt-and-suspenders check in handleSend. The backend is the real
+// enforcement (see MessageTooLongError -> HTTP 413); this just gives
+// instant feedback instead of a round trip.
+const MAX_MESSAGE_LENGTH = 2000;
+
+const PENDING_LIMIT_WARNING = "Too many messages waiting for a reply — please wait a moment before sending another.";
+const MESSAGE_TOO_LONG_WARNING = `Message is too long (max ${MAX_MESSAGE_LENGTH} characters).`;
 
 function typingDelayFor(text: string): number {
   const base = text.length * TYPING_MS_PER_CHAR;
@@ -42,10 +63,59 @@ export default function Chatroom() {
   } = useChat();
 
   const [inputMessage, setInputMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  // Count of this session's messages currently in flight (sent, reply not
+  // yet fully revealed) -- not a boolean, since up to MAX_PENDING_MESSAGES
+  // can be in flight at once (send button stays clickable throughout, per
+  // design: the chatroom mimics a real text thread, not a form that locks
+  // while "submitting").
+  const [pendingCount, setPendingCount] = useState(0);
+  // Shared banner text for both the pending-message cap and the
+  // message-too-long check below -- null hides the banner.
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
 
+  // null = still checking with the backend, so the popup doesn't flash
+  // on screen for a returning, already-consented session before the
+  // check resolves.
+  const [consented, setConsented] = useState<boolean | null>(null);
+  const [isSubmittingConsent, setIsSubmittingConsent] = useState(false);
+  // Pulled from the backend (consent_policy table) rather than hardcoded,
+  // so the wording can change without a frontend redeploy.
+  const [consentText, setConsentText] = useState<string | null>(null);
+
   const isVerified = Boolean(code);
+
+  useEffect(() => {
+    fetch('/api/consent', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        setConsented(Boolean(data?.consented));
+        setConsentText(typeof data?.conditionText === 'string' ? data.conditionText : null);
+      })
+      .catch(error => {
+        console.error("Failed to check consent status:", error);
+        // Fail closed -- if the check itself is broken, still show the
+        // popup rather than silently letting messages through unconsented.
+        setConsented(false);
+      });
+  }, []);
+
+  const handleAgreeConsent = async () => {
+    setIsSubmittingConsent(true);
+    try {
+      const response = await fetch('/api/consent', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (response.ok) {
+        setConsented(true);
+      }
+    } catch (error) {
+      console.error("Failed to submit consent:", error);
+    } finally {
+      setIsSubmittingConsent(false);
+    }
+  };
 
   const createMessage = (text: string, sender: Message['sender']): Message => ({
     id: generateMessageId(),
@@ -57,8 +127,32 @@ export default function Chatroom() {
   
   const handleSend = async (e: BaseSyntheticEvent) => {
     e.preventDefault();
-    if (!inputMessage.trim() || isSending) return;
-    setIsSending(true);
+    if (!inputMessage.trim()) return;
+
+    // maxLength on the input below should already prevent this, but keep
+    // the same belt-and-suspenders check as the other gates -- the
+    // backend's MAX_MESSAGE_LENGTH is the real enforcement.
+    if (inputMessage.length > MAX_MESSAGE_LENGTH) {
+      setWarningMessage(MESSAGE_TOO_LONG_WARNING);
+      return;
+    }
+
+    // The overlay below should already prevent this, but the backend is
+    // the real gate (see ChatService.handle_chat_turn's consent check) --
+    // this is just a cheap early return, not the enforcement.
+    if (!consented) return;
+
+    // Real-world text threads let you stack a few outgoing messages before
+    // a reply lands, but not unboundedly -- past the cap, block the send
+    // and keep the typed text in the box rather than losing it. This is a
+    // UX nicety only (see MAX_PENDING_MESSAGES) -- the backend enforces
+    // the real cap regardless of what this check does.
+    if (pendingCount >= MAX_PENDING_MESSAGES) {
+      setWarningMessage(PENDING_LIMIT_WARNING);
+      return;
+    }
+    setWarningMessage(null);
+    setPendingCount(prev => prev + 1);
 
     const newMessage = createMessage(inputMessage, 'user');
 
@@ -101,6 +195,32 @@ export default function Chatroom() {
         response = await postChat('/api/guestchat');
       }
 
+      if (response.status === 403) {
+        // Rare fallback (e.g. the GET /api/consent check above raced with
+        // something clearing the session's consent record) -- re-show the
+        // popup rather than erroring out.
+        setConsented(false);
+        return;
+      }
+
+      if (response.status === 429) {
+        // Belt-and-suspenders: the client-side cap above should normally
+        // catch this first, but a second tab (or a direct API call) can
+        // still hit the backend's real cap. The optimistic user bubble
+        // above was already added and the input already cleared by this
+        // point, so this rare path doesn't retract/restore either --
+        // just surface the warning; full recovery UX is later work.
+        setWarningMessage(PENDING_LIMIT_WARNING);
+        return;
+      }
+
+      if (response.status === 413) {
+        // Same rare-path reasoning as 429 above -- maxLength/the
+        // client-side check should normally catch this first.
+        setWarningMessage(MESSAGE_TOO_LONG_WARNING);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`Server responded with status code: ${response.status}`);
       }
@@ -124,12 +244,14 @@ export default function Chatroom() {
 
       // Reveal each turn as its own bubble with a typing-speed delay between
       // them, instead of dumping the whole reply in one message — mimics a
-      // person sending several texts in a row. isSending (and therefore the
-      // disabled input) stays true for the whole sequence via the outer
-      // try/finally, so the user can't send a new message mid-reveal. The
-      // first turn skips the delay -- the backend's own processing time
-      // (topic matching, generation, gate verification) already covers the
-      // "thinking" pause, so delaying it again would just feel sluggish.
+      // person sending several texts in a row. Unlike before, the input
+      // stays enabled during this reveal (see pendingCount) — a message
+      // typed and sent mid-reveal lands in the message list wherever it
+      // falls in real time, interleaved with the remaining bubbles below,
+      // same as a real text thread. The first turn skips the delay -- the
+      // backend's own processing time (topic matching, generation, gate
+      // verification) already covers the "thinking" pause, so delaying it
+      // again would just feel sluggish.
       const turns = data.turns as string[];
       for (let i = 0; i < turns.length; i++) {
         if (i > 0) {
@@ -148,7 +270,7 @@ export default function Chatroom() {
       );
       setMessages(prev => [...prev, errorMessage]);
     } finally {
-      setIsSending(false);
+      setPendingCount(prev => Math.max(0, prev - 1));
     }
   };
 
@@ -191,6 +313,24 @@ export default function Chatroom() {
 
   return (
     <div>
+      {/* Compulsory consent popup -- blocks the whole page until agreed.
+          Minimal inline styling to actually cover/block interaction; the
+          rest of the visual design is later work. */}
+      {consented === false && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          background: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{ background: 'white', color: 'black', padding: '24px', maxWidth: '480px' }}>
+            <p>{consentText ?? CONSENT_TEXT_UNAVAILABLE}</p>
+            <button onClick={handleAgreeConsent} disabled={isSubmittingConsent || !consentText}>
+              {isSubmittingConsent ? 'Submitting...' : 'I Agree'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Invite code Controls */}
       <form onSubmit={handleCode}>
         <input
@@ -224,18 +364,21 @@ export default function Chatroom() {
         ))}
       </div>
 
+      {/* Simple placeholder -- polished styling/dismissal is later work */}
+      {warningMessage && (
+        <div>{warningMessage}</div>
+      )}
+
       {/* Chat Form Controls */}
       <form onSubmit={handleSend}>
         <input
           type="text"
-          placeholder={isSending ? "Waiting for system reply..." : "Type your message here..."}
+          placeholder="Type your message here..."
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          disabled={isSending}
+          maxLength={MAX_MESSAGE_LENGTH}
         />
-        <button type="submit" disabled={isSending}>
-          {isSending ? 'Sending...' : 'Send'}
-        </button>
+        <button type="submit">Send</button>
       </form>
     </div>
   );
