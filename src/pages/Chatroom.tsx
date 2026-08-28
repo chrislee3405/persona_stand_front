@@ -1,5 +1,4 @@
-// import { useRef, useState } from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { BaseSyntheticEvent } from 'react';
 import { useChat, type Message } from '../context/ChatContext';
 
@@ -62,6 +61,33 @@ export default function Chatroom() {
     conversationId, setConversationId
   } = useChat();
 
+  // Mirrors conversationId, but read synchronously via .current instead of
+  // through React state -- fixes a real bug: two messages sent close
+  // together (before the first response's setConversationId has actually
+  // committed a re-render) both read the OLD conversationId value from
+  // their handleSend closure, so the second message's request omits
+  // conversationId entirely. The backend then can't tell that was meant
+  // to continue the same conversation and silently starts a brand new one
+  // (see ChatService.handle_chat_turn's stale-conversation-id fallback) --
+  // no error, just quietly lost context. A ref sidesteps this because
+  // ref.current updates immediately when assigned, independent of
+  // React's render/commit timing, so even a handleSend call fired a
+  // moment later reads the fresh value.
+  const conversationIdRef = useRef(conversationId);
+
+  // Chains sends so a message fired before an EARLIER one's response has
+  // even come back still waits to learn conversationId, instead of
+  // silently going out with none. conversationIdRef alone only fixes the
+  // gap between "response received" and "React re-rendered" -- it can't
+  // help if there's no response yet at all, since nothing (not React
+  // state, not the ref) knows the id until the server says so. Each send
+  // awaits whatever was previously chained here (resolving immediately if
+  // nothing's pending) before building its request body, then chains its
+  // own completion for whatever comes after it. Only request-building
+  // waits on this -- the optimistic bubble/input-clear below still happens
+  // immediately, so sending still feels instant.
+  const conversationIdReadyRef = useRef<Promise<void>>(Promise.resolve());
+
   const [inputMessage, setInputMessage] = useState('');
   // Count of this session's messages currently in flight (sent, reply not
   // yet fully revealed) -- not a boolean, since up to MAX_PENDING_MESSAGES
@@ -101,11 +127,17 @@ export default function Chatroom() {
   }, []);
 
   const handleAgreeConsent = async () => {
+    // Button is disabled while consentText is null, but guard here too --
+    // the backend requires the exact current text in the body (see
+    // ConsentService.record_consent), so there's nothing valid to send yet.
+    if (!consentText) return;
     setIsSubmittingConsent(true);
     try {
       const response = await fetch('/api/consent', {
         method: 'POST',
-        credentials: 'include'
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ conditionText: consentText })
       });
       if (response.ok) {
         setConsented(true);
@@ -160,7 +192,20 @@ export default function Chatroom() {
     const textToSend = inputMessage;
     setInputMessage('');
 
+    // Register this send in the chain before awaiting anything -- a THIRD
+    // message sent while both the first and second are still pending must
+    // wait behind the second (which is itself waiting behind the first),
+    // not race it. resolveReady is always called in `finally` below, on
+    // every exit path, so a failed/short-circuited turn never leaves
+    // whatever's chained behind it waiting forever.
+    let resolveReady!: () => void;
+    const thisReady = new Promise<void>(resolve => { resolveReady = resolve; });
+    const waitForPreviousSend = conversationIdReadyRef.current;
+    conversationIdReadyRef.current = thisReady;
+
     try {
+      await waitForPreviousSend;
+
       // Auth no longer travels in the body. The server identifies the
       // caller (guest or invite-code) from the httpOnly session cookie
       // set during /api/code or on first contact, and independently
@@ -172,7 +217,7 @@ export default function Chatroom() {
       // new conversation and returns its id, rather than erroring.)
       const requestBody = {
         text: textToSend,
-        ...(conversationId ? { conversationId } : {})
+        ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {})
       };
 
       const postChat = (endpoint: string) => fetch(endpoint, {
@@ -237,10 +282,21 @@ export default function Chatroom() {
       }
 
       // Capture the backend-assigned id — no-op after the first message,
-      // since it stays the same for the rest of the session.
-      if (data.conversationId !== conversationId) {
+      // since it stays the same for the rest of the session. Set the ref
+      // immediately (synchronously) alongside the state -- a message sent
+      // right after this one must see the new id even if React hasn't
+      // re-rendered yet (see conversationIdRef above).
+      if (data.conversationId !== conversationIdRef.current) {
         setConversationId(data.conversationId);
+        conversationIdRef.current = data.conversationId;
       }
+
+      // conversationId is now settled for this turn -- release anything
+      // chained behind us right away, rather than making it wait through
+      // the (potentially several-second) bubble reveal below too. Safe to
+      // call again in `finally` -- resolving a promise more than once is a
+      // no-op after the first.
+      resolveReady();
 
       // Reveal each turn as its own bubble with a typing-speed delay between
       // them, instead of dumping the whole reply in one message — mimics a
@@ -271,6 +327,11 @@ export default function Chatroom() {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setPendingCount(prev => Math.max(0, prev - 1));
+      // Catch-all for every exit path that isn't the success path above
+      // (403/429/413 early returns, thrown/network errors) -- guarantees
+      // whatever's chained behind this send is never left waiting forever
+      // just because this turn failed or got cut short.
+      resolveReady();
     }
   };
 
