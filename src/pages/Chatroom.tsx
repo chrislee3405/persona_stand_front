@@ -1,198 +1,60 @@
-// import { useRef, useState } from 'react';
-import { useState } from 'react';
-import type { BaseSyntheticEvent } from 'react';
-import { useChat, type Message } from '../context/ChatContext';
+import { useChat } from '../context/ChatContext';
+import { useConsent } from '../hooks/useConsent';
+import { useInviteCode } from '../hooks/useInviteCode';
+import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
 
-// const PAIRS_BEFORE_SUMMARIZE = 5;
-
-function generateMessageId(): string {
-  return (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-    ? crypto.randomUUID()
-    : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-// Tunable, mirrors the backend's _MIN_CHARS_PER_TURN hyperparameter in spirit:
-// each turn is revealed after a delay proportional to its length, simulating
-// a person typing it out, rather than all turns appearing at once.
-const TYPING_MS_PER_CHAR = 40;
-const TYPING_MIN_MS = 400;
-const TYPING_MAX_MS = 3000;
-// +/- this fraction of the base delay, randomized per turn -- a perfectly
-// deterministic length-proportional delay feels robotic; real typing speed
-// varies turn to turn.
-const TYPING_JITTER_RATIO = 0.25;
-
-function typingDelayFor(text: string): number {
-  const base = text.length * TYPING_MS_PER_CHAR;
-  const jitterRange = base * TYPING_JITTER_RATIO;
-  const jittered = base + (Math.random() * 2 - 1) * jitterRange;
-  return Math.min(Math.max(jittered, TYPING_MIN_MS), TYPING_MAX_MS);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+// Shown only if the GET /api/consent response has no conditionText at all
+// (e.g. consent_policy is somehow empty) -- should be rare in practice
+// since app/main.py seeds an initial policy row on startup.
+const CONSENT_TEXT_UNAVAILABLE = "Consent terms are currently unavailable. Please try again later.";
 
 export default function Chatroom() {
-  const {
-    messages, setMessages,
-    code, setCode,
-    inputCode, setInputCode,
-    conversationId, setConversationId
-  } = useChat();
+  // The running message list (persisted in ChatContext across refreshes) --
+  // rendered below; every other piece of chat state lives in the hooks.
+  const { messages } = useChat();
 
-  const [inputMessage, setInputMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  // Invite-code verification: the code/input values, the in-flight flag, the
+  // submit handler for the code form, and isVerified (also handed to
+  // useChatDispatch so it can pick the invite vs guest endpoint).
+  const { code, inputCode, setInputCode, isVerified, isVerifyingCode, verifyCode } = useInviteCode();
 
-  const isVerified = Boolean(code);
+  // Compulsory-consent gate: whether the user has consented, the policy text
+  // for the popup, the submitting flag, and agree/revoke actions.
+  const { consented, consentText, isSubmittingConsent, agreeConsent, revokeConsent } = useConsent();
 
-  const createMessage = (text: string, sender: Message['sender']): Message => ({
-    id: generateMessageId(),
-    text,
-    sender
+  // Everything about turning typed text into backend turns: the input value +
+  // change handler, the send handler (rapid-fire fragment batching lives in
+  // here), the warning-banner text, and the ids of bubbles the backend
+  // refused (rendered red). Needs consent + verified state as inputs, and
+  // re-opens the consent popup if the backend rejects a turn with HTTP 403.
+  const { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds } = useChatDispatch({
+    consented,
+    isVerified,
+    onConsentRevoked: revokeConsent,
   });
-
-
-  
-  const handleSend = async (e: BaseSyntheticEvent) => {
-    e.preventDefault();
-    if (!inputMessage.trim() || isSending) return;
-    setIsSending(true);
-
-    const newMessage = createMessage(inputMessage, 'user');
-
-    setMessages(prev => [...prev, newMessage]);
-    const textToSend = inputMessage;
-    setInputMessage('');
-
-    try {
-      // Auth no longer travels in the body. The server identifies the
-      // caller (guest or invite-code) from the httpOnly session cookie
-      // set during /api/code or on first contact, and independently
-      // checks that conversationId is actually owned by that session
-      // before reading/writing anything. conversationId is sent only
-      // so the server knows which conversation to continue — it is not
-      // trusted as proof of ownership. (A stale/invalid conversationId
-      // is handled entirely server-side too — it transparently starts a
-      // new conversation and returns its id, rather than erroring.)
-      const requestBody = {
-        text: textToSend,
-        ...(conversationId ? { conversationId } : {})
-      };
-
-      const postChat = (endpoint: string) => fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // send the httpOnly session cookie
-        body: JSON.stringify(requestBody)
-      });
-
-      let response = await postChat(isVerified ? '/api/invitechat' : '/api/guestchat');
-
-      if (response.status === 401 && isVerified) {
-        // This tab still has an invite code cached, but the server says
-        // this session's verification isn't valid (e.g. the session
-        // cookie expired or was cleared). Drop the stale code so the UI
-        // reverts to "not verified" and let the user re-verify later,
-        // and treat this message as guest so it isn't lost.
-        setCode('');
-        setInputCode('');
-        response = await postChat('/api/guestchat');
-      }
-
-      if (!response.ok) {
-        throw new Error(`Server responded with status code: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (
-        !data ||
-        !Array.isArray(data.turns) ||
-        data.turns.length === 0 ||
-        !data.turns.every((turn: unknown) => typeof turn === 'string' && turn.trim()) ||
-        typeof data.conversationId !== 'string'
-      ) {
-        throw new Error(`Malformed response: ${JSON.stringify(data)}`);
-      }
-
-      // Capture the backend-assigned id — no-op after the first message,
-      // since it stays the same for the rest of the session.
-      if (data.conversationId !== conversationId) {
-        setConversationId(data.conversationId);
-      }
-
-      // Reveal each turn as its own bubble with a typing-speed delay between
-      // them, instead of dumping the whole reply in one message — mimics a
-      // person sending several texts in a row. isSending (and therefore the
-      // disabled input) stays true for the whole sequence via the outer
-      // try/finally, so the user can't send a new message mid-reveal. The
-      // first turn skips the delay -- the backend's own processing time
-      // (topic matching, generation, gate verification) already covers the
-      // "thinking" pause, so delaying it again would just feel sluggish.
-      const turns = data.turns as string[];
-      for (let i = 0; i < turns.length; i++) {
-        if (i > 0) {
-          await sleep(typingDelayFor(turns[i]));
-        }
-        const backendMessage = createMessage(turns[i], 'backend');
-        setMessages(prev => [...prev, backendMessage]);
-      }
-
-
-    } catch (error) {
-      console.error("Server connection dropped:", error);
-      const errorMessage = createMessage(
-        "Connection error: Failed to receive response from the negotiation terminal server.",
-        'backend'
-      );
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handleCode = async (e: BaseSyntheticEvent) => {
-    e.preventDefault();
-    if (!inputCode.trim() || isVerified || isVerifyingCode) return;
-    setIsVerifyingCode(true);
-
-    const codeToSend = inputCode.trim();
-
-    try {
-      const response = await fetch('/api/code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // required: server sets the verified session cookie in the response
-        body: JSON.stringify({
-          input_code: codeToSend,
-          conversation_id: conversationId  // may be null if no message sent yet — that's fine
-        })
-      });
-
-      if (!response.ok) {
-        alert("Incorrect code! Please check and try again.");
-      } else {
-        const data = await response.json();
-        // `code` is now display-only ("Access Granted via X") — it is never
-        // sent back to the server as proof of anything. The server already
-        // upgraded this session to verified via the Set-Cookie on this response.
-        const verifiedCode = data.returned_result ?? codeToSend;
-        setCode(verifiedCode);
-        setInputCode(verifiedCode);
-      }
-    } catch (error) {
-      console.error("Server validation error:", error);
-      alert("system connection error. Please try again.");
-    } finally {
-      setIsVerifyingCode(false);
-    }
-  };
 
   return (
     <div>
+      {/* Compulsory consent popup -- blocks the whole page until agreed.
+          Minimal inline styling to actually cover/block interaction; the
+          rest of the visual design is later work. */}
+      {consented === false && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          background: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{ background: 'white', color: 'black', padding: '24px', maxWidth: '480px' }}>
+            <p>{consentText ?? CONSENT_TEXT_UNAVAILABLE}</p>
+            <button onClick={agreeConsent} disabled={isSubmittingConsent || !consentText}>
+              {isSubmittingConsent ? 'Submitting...' : 'I Agree'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Invite code Controls */}
-      <form onSubmit={handleCode}>
+      <form onSubmit={verifyCode}>
         <input
           type="text"
           placeholder={
@@ -217,25 +79,35 @@ export default function Chatroom() {
       {/* Raw Message List */}
       <div>
         {messages.map((msg) => (
-          <div key={msg.id}>
+          <div
+            key={msg.id}
+            style={
+              msg.sender === 'user' && blockedIds.includes(msg.id)
+                ? { color: 'red' }
+                : undefined
+            }
+          >
             <strong>{msg.sender === 'user' ? 'You: ' : 'System: '}</strong>
             {msg.text}
           </div>
         ))}
       </div>
 
+      {/* Simple placeholder -- polished styling/dismissal is later work */}
+      {warningMessage && (
+        <div>{warningMessage}</div>
+      )}
+
       {/* Chat Form Controls */}
       <form onSubmit={handleSend}>
         <input
           type="text"
-          placeholder={isSending ? "Waiting for system reply..." : "Type your message here..."}
+          placeholder="Type your message here..."
           value={inputMessage}
-          onChange={(e) => setInputMessage(e.target.value)}
-          disabled={isSending}
+          onChange={handleInputChange}
+          maxLength={MAX_MESSAGE_LENGTH}
         />
-        <button type="submit" disabled={isSending}>
-          {isSending ? 'Sending...' : 'Send'}
-        </button>
+        <button type="submit">Send</button>
       </form>
     </div>
   );
