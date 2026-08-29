@@ -1,5 +1,4 @@
 import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom' // for direct to diff pages
-import './App.css'
 
 import Navbar from './components/navbar.tsx'
 import Footer from './components/footer.tsx'
