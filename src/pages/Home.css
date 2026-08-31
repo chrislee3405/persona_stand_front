@@ -1,0 +1,204 @@
+/* ===================================================================
+   Hero band (used by About, and by Qualifications with `.hero-band--flip`)
+
+   A full-bleed, height-CLAMPED band. The photo fills it via
+   background-size (cover or "auto 100%"); a page-background scrim on one
+   side guarantees the text on that side stays on a clean background,
+   whatever the photo or the numbers.
+
+   Default: photo weighted LEFT, text on the RIGHT.
+   `.hero-band--flip`: photo weighted RIGHT, text on the LEFT (mirror).
+
+   Numeric knobs come from HERO_DEFAULTS (+ per-section / per-deployment
+   overrides) in Home.tsx as CSS custom properties (--hero-*); fallbacks
+   below match the code.
+   =================================================================== */
+
+/* Guard the full-bleed math against the horizontal scrollbar. `clip`
+   (unlike `hidden`) does not break the sticky navbar. */
+html {
+  overflow-x: clip;
+}
+
+.hero-band {
+  --_bg-size: var(--hero-bg-size, cover);
+  --_h: var(--hero-h, 46vw);   /* vw so the band keeps its shape across same-ratio screens */
+  --_h-min: var(--hero-h-min, 420px);
+  --_h-max: var(--hero-h-max, 1000px);
+  --_focus-x: var(--hero-focus-x, 50%);
+  --_focus-y: var(--hero-focus-y, 32%);
+  --_zoom: var(--hero-zoom, 1.12);
+  --_scrim-start: var(--hero-scrim-start, 44%);
+  --_scrim-end: var(--hero-scrim-end, 56%);
+  --_text-width: var(--hero-text-width, 44%);
+  --_bottom-fade: 10px;   /* thin soft edge along the photo's bottom */
+
+  /* Direction tokens -- flipped by .hero-band--flip below. */
+  --_scrim-dir: to right;          /* scrim fills the text side */
+  --_panel-mask-dir: to right;     /* ::before feather direction */
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+
+  /* Full-bleed: band edge == viewport edge. */
+  margin-inline: calc(50% - 50vw);
+  margin-block: 3rem;
+
+  /* Bounded PREFERRED height (predictable, zero CLS) -- a floor, not a
+     cap: if the content is taller than this on a narrow desktop, the band
+     grows to fit instead of clipping it. */
+  min-height: clamp(var(--_h-min), var(--_h), var(--_h-max));
+  overflow: hidden;
+}
+
+/* The About band sits flush under the sticky navbar (cancels RootLayout's
+   .py-4 top padding); other bands keep normal spacing. */
+#about.hero-band {
+  margin-top: -1.5rem;
+}
+
+/* Layer 0: the photo. background-image comes from an inline style. */
+.hero-band__img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+
+  background-repeat: no-repeat;
+  background-size: var(--_bg-size);
+  background-position: var(--_focus-x) var(--_focus-y);
+
+  transform: scale(var(--_zoom));
+  transform-origin: var(--_focus-x) var(--_focus-y);
+
+  /* Thin fade-out along the bottom edge so the photo doesn't end on a hard line. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--_bottom-fade)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--_bottom-fade)), transparent);
+}
+
+/* Layer 1: page-background scrim over the text side. Opaque past
+   --_scrim-end, which Home.tsx caps to the text column's inner edge, so
+   the text can never sit on the photo. */
+.hero-band__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    var(--_scrim-dir),
+    transparent 0%,
+    transparent var(--_scrim-start),
+    var(--bs-body-bg, #fff) var(--_scrim-end)
+  );
+}
+
+/* Layer 2: the text, kept to the page width and pushed to one side.
+   In normal flow (not absolute) so it DRIVES the band height. */
+.hero-band__inner {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+}
+
+.hero-band__text {
+  position: relative;
+  width: var(--_text-width);
+  max-width: 40rem;      /* rem so it grows with the 4K root-font bump */
+  margin-left: auto;     /* -> right side (flipped below) */
+  padding-right: 1rem;
+}
+
+/* Hard guarantee: a solid page-background panel directly behind the text
+   with a short feathered lead-in on the photo-facing side. Independent of
+   the scrim and of the viewport/container ratio, so the text is ALWAYS on
+   a clean background. */
+.hero-band__text::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  left: -2.5rem;
+  z-index: -1;
+  background: var(--bs-body-bg, #fff);
+  -webkit-mask-image: linear-gradient(var(--_panel-mask-dir), transparent 0, #000 2.5rem);
+  mask-image: linear-gradient(var(--_panel-mask-dir), transparent 0, #000 2.5rem);
+}
+
+/* ---- Mirror: photo on the RIGHT, text on the LEFT ------------------- */
+.hero-band--flip {
+  --_scrim-dir: to left;
+  --_panel-mask-dir: to left;
+}
+.hero-band--flip .hero-band__text {
+  margin-left: 0;
+  margin-right: auto;
+  padding-right: 0;
+  padding-left: 1rem;
+}
+.hero-band--flip .hero-band__text::before {
+  left: auto;
+  right: -2.5rem;
+}
+
+/* --- 900-991px: use the exact >=992 side-by-side layout ------------- */
+/* Bootstrap's `.container` is only 720px wide here (md tier), which
+   squeezes the text column onto the photo. Pin the inner to 960px
+   (Bootstrap's lg width) so 900-1199 all render identically. */
+@media (min-width: 900px) and (max-width: 991.98px) {
+  .hero-band__inner {
+    max-width: 960px;
+  }
+}
+
+/* --- Narrow screens ------------------------------------------------- */
+/* Below this width the side-by-side overlay is too cramped, so stack:
+   the photo becomes a faint full-width backdrop and the text runs
+   across it. */
+@media (max-width: 899.98px) {
+  .hero-band {
+    min-height: 0;
+    margin-bottom: 2rem;
+  }
+  #about.hero-band {
+    margin-top: -1.5rem;
+  }
+
+  .hero-band__img {
+    opacity: 0.16;
+    transform: none;
+    /* `cover` (not `auto 100%`) so the faint backdrop always fills the band
+       whatever the image's aspect ratio or the band's (content-driven)
+       height -- otherwise a shorter section / squarer image leaves gaps. */
+    background-size: cover;
+    background-position: var(--hero-mobile-focus-x, 30%) center;
+  }
+  .hero-band--flip .hero-band__img {
+    background-position: calc(100% - var(--hero-mobile-focus-x, 30%)) center;
+  }
+
+  .hero-band__scrim {
+    display: none;
+  }
+
+  .hero-band__text::before {
+    display: none;
+  }
+
+  .hero-band__text {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 2rem 1rem;
+  }
+}
+
+/* --- Very narrow screens (phones) --------------------------------- */
+@media (max-width: 480px) {
+  .hero-band__img {
+    background-size: cover;
+    background-position: var(--hero-tiny-focus-x, 20%) center;
+  }
+  .hero-band--flip .hero-band__img {
+    background-position: calc(100% - var(--hero-tiny-focus-x, 20%)) center;
+  }
+}

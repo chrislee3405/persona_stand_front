@@ -1,8 +1,10 @@
 .git
 .gitignore
-.env
-.env.*
-!.env.example
+# `.env` IS in the build context -- it holds only non-secret VITE_* build
+# config that gets inlined into the public bundle anyway. Only local /
+# secret overrides are excluded:
+.env.local
+.env.*.local
 node_modules
 dist
 build

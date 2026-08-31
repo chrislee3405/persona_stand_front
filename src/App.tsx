@@ -20,12 +20,14 @@ const router = createBrowserRouter([
     path: "/",
     element: <RootLayout />, // Always keeps Navbar and Footer visible
     children: [
-      // About Me, Qualifications and Journey are now one scrolling page.
+      // About Me, Qualifications & Awards, Certifications and Journey are now
+      // one scrolling page.
       { path: "/", element: <Home /> },
 
       // Old per-page URLs still work -- redirect to the matching section anchor.
       { path: "aboutme", element: <Navigate to="/#about" replace /> },
       { path: "qualifications", element: <Navigate to="/#qualifications" replace /> },
+      { path: "certifications", element: <Navigate to="/#certifications" replace /> },
       { path: "journey", element: <Navigate to="/#journey" replace /> },
 
       { path: "projects/ransom-simulator", element: <RansomSimulator /> },
