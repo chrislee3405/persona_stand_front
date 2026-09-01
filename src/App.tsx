@@ -7,9 +7,8 @@ import { ChatProvider } from './context/ChatContext.tsx'
 import { ActiveSectionProvider } from './context/ActiveSectionContext.tsx'
 
 import Home from './pages/Home.tsx'
-import Contact from './pages/Contact.tsx'
-import RansomSimulator from './pages/RansomSimulator.tsx'
-import CarRental from './pages/CarRental.tsx'
+import PersonaStand from './pages/projects/PersonaStand.tsx'
+import RansomSimulator from './pages/projects/RansomSimulator.tsx'
 import Chatroom from './pages/Chatroom.tsx'
 
 
@@ -29,10 +28,10 @@ const router = createBrowserRouter([
       { path: "qualifications", element: <Navigate to="/#qualifications" replace /> },
       { path: "certifications", element: <Navigate to="/#certifications" replace /> },
       { path: "journey", element: <Navigate to="/#journey" replace /> },
+      { path: "contact", element: <Navigate to="/#contact" replace /> },
 
+      { path: "projects/persona-stand", element: <PersonaStand /> },
       { path: "projects/ransom-simulator", element: <RansomSimulator /> },
-      { path: "projects/car-rental", element: <CarRental /> },
-      { path: "contact", element: <Contact /> },
       { path: "chatroom", element: <Chatroom /> },
     ]
   }

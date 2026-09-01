@@ -202,3 +202,486 @@ html {
     background-position: calc(100% - var(--hero-tiny-focus-x, 20%)) center;
   }
 }
+
+/* ===================================================================
+   Journey timeline
+
+   Central vertical line; cards alternate left / right down the line,
+   each inside an elongated hexagon; a connector dot on the line per
+   card; the LAST card ("Now") is centred at the bottom end of the line.
+   Layout is nth-child / --now based -> works for any number of items.
+   =================================================================== */
+.jtl {
+  --jtl-line: 6px;                 /* line thickness */
+  --jtl-gap: 4rem;                 /* space between the two columns (holds the line) */
+  --jtl-pad: 1.25rem;              /* vertical padding per row */
+  --jtl-point: 26px;              /* hexagon side-point depth */
+  --jtl-accent: var(--bs-primary, #0d6efd);
+  --jtl-card-bg: var(--bs-body-bg, #fff);
+  --jtl-rule: var(--bs-border-color, #dee2e6);
+  --jtl-clip: polygon(
+    var(--jtl-point) 0, calc(100% - var(--jtl-point)) 0,
+    100% 50%,
+    calc(100% - var(--jtl-point)) 100%, var(--jtl-point) 100%,
+    0 50%
+  );
+
+  list-style: none;
+  position: relative;
+  margin: 0;
+  padding: 0;
+}
+
+/* the vertical line */
+.jtl::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: var(--jtl-line);
+  border-radius: var(--jtl-line);
+  background: var(--jtl-rule);
+  transform: translateX(-50%);
+}
+
+/* one row */
+.jtl__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* `dense` lets an even row's image (grid-column 1) backfill row 1 next
+     to its right-hand card; without it the image drops to row 2 (appears
+     stacked below the card). For the single-column "now" row it still
+     falls to row 2 = below the card, which is what we want there. */
+  grid-auto-flow: row dense;
+  column-gap: var(--jtl-gap);
+  align-items: center;
+  padding-block: var(--jtl-pad);
+}
+
+/* which column the card lands in */
+.jtl__item:nth-child(odd)  .jtl__card { grid-column: 1; justify-self: end; }
+.jtl__item:nth-child(even) .jtl__card { grid-column: 2; justify-self: start; }
+
+/* short arm from the line out to the card */
+.jtl__item::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  height: 3px;
+  width: calc(var(--jtl-gap) / 2);
+  background: var(--jtl-rule);
+  transform: translateY(-50%);
+}
+.jtl__item:nth-child(odd)::after  { right: 50%; }
+.jtl__item:nth-child(even)::after { left: 50%; }
+
+/* dot on the line, centred on the card */
+.jtl__dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--jtl-accent);
+  box-shadow: 0 0 0 4px var(--jtl-card-bg);   /* punches through the line */
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+/* elongated hexagon: outer element = border, inner = fill */
+.jtl__card {
+  width: 100%;
+  max-width: 30rem;
+  padding: 2px;                    /* becomes the hexagon's rim */
+  background: var(--jtl-rule);
+  clip-path: var(--jtl-clip);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.12));
+}
+.jtl__card-inner {
+  position: relative;
+  background: var(--jtl-card-bg);
+  clip-path: var(--jtl-clip);
+  padding: 1.25rem clamp(2rem, 6%, 3.25rem);
+}
+
+/* clickable card (block has a site_journey detail sheet): strip the native
+   <button> chrome so it looks identical to the plain card, then add a lift
+   on hover / focus. The rim (.jtl__card background) turns accent on
+   focus-visible -- an unclipped focus indicator (clip-path would eat an
+   outline). */
+.jtl__card--btn {
+  display: block;
+  width: 100%;
+  border: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.jtl__card--btn:hover,
+.jtl__card--btn:focus-visible {
+  transform: translateY(-2px);
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.18));
+  outline: none;
+}
+.jtl__card--btn:focus-visible { background: var(--jtl-accent); }
+
+/* "Read more ->" affordance inside a clickable card, aligned to the right */
+.jtl__more {
+  display: block;
+  margin-top: 0.6rem;
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--jtl-accent);
+}
+
+.jtl__year { margin: 0 0 0.15rem; font-weight: 700; font-size: 0.85rem; color: var(--jtl-accent); }
+.jtl__title { margin: 0 0 0.4rem; }
+.jtl .lead { font-size: 1rem; font-weight: 400; margin-bottom: 0; }
+.jtl .lead + .lead { margin-top: 0.5rem; }
+
+.jtl__badge {
+  display: inline-block;
+  margin-bottom: 0.4rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: var(--jtl-accent);
+}
+
+/* optional per-block image: a plain rectangle in the OTHER column from
+   the card, edges softly faded into the page. Only rendered when the
+   block has an image (.jtl__item--has-img). */
+.jtl__media {
+  width: 100%;
+  max-width: var(--jtl-media-w, 32rem);
+  align-self: center;   /* vertically centred against the card */
+}
+.jtl__media img {
+  display: block;
+  width: 100%;
+  height: var(--jtl-media-h, 18rem);   /* fixed -> every image the same size.
+                                          --jtl-media-w / --jtl-media-h are
+                                          the size knobs. */
+  object-fit: cover;
+
+  /* plain rectangle whose edges feather out a little: two inset gradients
+     (H + V) intersected. `--jtl-fade` = how far in the fade reaches from
+     each edge -- smaller = subtler. */
+  --jtl-fade: 9%;
+  -webkit-mask-image:
+    linear-gradient(to right,  transparent, #000 var(--jtl-fade), #000 calc(100% - var(--jtl-fade)), transparent),
+    linear-gradient(to bottom, transparent, #000 var(--jtl-fade), #000 calc(100% - var(--jtl-fade)), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right,  transparent, #000 var(--jtl-fade), #000 calc(100% - var(--jtl-fade)), transparent),
+    linear-gradient(to bottom, transparent, #000 var(--jtl-fade), #000 calc(100% - var(--jtl-fade)), transparent);
+  mask-composite: intersect;
+}
+/* :nth-child() to match the card's odd/even specificity */
+.jtl__item:nth-child(odd)  .jtl__media { grid-column: 2; justify-self: start; }
+.jtl__item:nth-child(even) .jtl__media { grid-column: 1; justify-self: end; }
+
+/* last row: the current node, centred at the end of the line */
+.jtl__item--now {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding-bottom: 0;
+}
+.jtl__item--now::after { display: none; }         /* no side arm */
+.jtl__item--now .jtl__dot { display: none; }      /* the card itself marks "here" */
+/* :nth-child() keeps specificity level with the odd/even card rules above
+   so this wins regardless of whether the last item is odd or even. */
+.jtl__item--now:nth-child(odd)  .jtl__card,
+.jtl__item--now:nth-child(even) .jtl__card {
+  grid-column: 1;
+  justify-self: center;
+  position: relative;
+  z-index: 3;                                     /* opaque: hides the line's tail */
+  padding: 4px;                                   /* thicker rim */
+  background: var(--jtl-accent);                  /* accent-coloured rim */
+}
+/* current node's image (if any) stacks under the centred card */
+.jtl__item--now:nth-child(odd)  .jtl__media,
+.jtl__item--now:nth-child(even) .jtl__media {
+  grid-column: 1;
+  justify-self: center;
+  margin-top: 1rem;
+}
+
+/* --- single column below lg: line on the left, all cards to its right - */
+@media (max-width: 991.98px) {
+  .jtl {
+    --rail: 1.5rem;               /* line x-position from the left */
+    --arm: 1.5rem;                /* rail -> card connector length */
+  }
+
+  .jtl::before { left: var(--rail); transform: none; }
+
+  /* every row: one column, card stretched to the right of the rail */
+  .jtl__item,
+  .jtl__item--now {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+    justify-items: stretch;
+    padding-left: calc(var(--rail) + var(--arm));
+    padding-block: var(--jtl-pad);
+  }
+  .jtl__item:nth-child(odd)  .jtl__card,
+  .jtl__item:nth-child(even) .jtl__card,
+  .jtl__item--now:nth-child(odd)  .jtl__card,
+  .jtl__item--now:nth-child(even) .jtl__card {
+    grid-column: 1;
+    justify-self: stretch;
+    max-width: none;
+  }
+  /* image stacks below the card, same column */
+  .jtl__item:nth-child(odd)  .jtl__media,
+  .jtl__item:nth-child(even) .jtl__media,
+  .jtl__item--now:nth-child(odd)  .jtl__media,
+  .jtl__item--now:nth-child(even) .jtl__media {
+    grid-column: 1;
+    justify-self: stretch;
+    max-width: none;
+    margin-top: 0.75rem;
+  }
+  /* keep the current node's image aligned with its left-shifted card */
+  .jtl__item--now:nth-child(odd)  .jtl__media,
+  .jtl__item--now:nth-child(even) .jtl__media {
+    margin-left: calc(-1 * var(--now-shift));
+  }
+
+  /* connector arm + dot: rail -> the hexagon's left point, at mid-height.
+     :nth-child() keeps specificity level with the odd/even ::after rules. */
+  .jtl__item:nth-child(odd)::after,
+  .jtl__item:nth-child(even)::after {
+    display: block;
+    left: var(--rail);
+    right: auto;
+    width: var(--arm);
+    top: 50%;
+  }
+  .jtl__dot {
+    display: block;
+    left: var(--rail);
+    top: 50%;
+  }
+
+  /* last ("now") row: NOT aligned with the others -- shifted left so the
+     hexagon sits over the rail. No bent arm: the line runs straight down
+     into the hex and stops at its top edge. `--now-shift` = how far the
+     card overhangs left of the rail (raise it to push further left; the
+     section's 1rem gutter is the practical limit before the viewport edge). */
+  .jtl__item--now {
+    position: relative;
+    --now-shift: 1rem;
+    padding-left: 0;
+  }
+  .jtl__item--now:nth-child(odd)  .jtl__card,
+  .jtl__item--now:nth-child(even) .jtl__card {
+    margin-left: calc(-1 * var(--now-shift));
+  }
+  .jtl__item--now .jtl__dot { display: none; }
+  .jtl__item--now:nth-child(odd)::after,
+  .jtl__item--now:nth-child(even)::after {   /* no arm */
+    display: none;
+  }
+  .jtl__item--now::before {                  /* stop the rail line at the hex top */
+    content: "";
+    position: absolute;
+    left: 0;
+    width: calc(var(--rail) + var(--jtl-line));
+    top: var(--jtl-pad);
+    bottom: 0;
+    background: var(--jtl-card-bg);
+  }
+}
+
+/* ===================================================================
+   Journey detail sheet (bottom pop-up)
+
+   Self-contained: a fixed full-screen layer portalled to <body>, a dimmed
+   backdrop, and a panel that slides up from the bottom edge. `.jsheet--open`
+   toggles both. The panel is centred with a gutter on each side, capped at
+   4/5 of the viewport height, and scrolls internally when the content is
+   taller than that.
+   =================================================================== */
+.jsheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1045;                 /* above the sticky navbar (1020) */
+  visibility: hidden;
+  pointer-events: none;
+}
+.jsheet--open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.jsheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.jsheet--open .jsheet__backdrop {
+  opacity: 1;
+}
+
+.jsheet__panel {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  /* narrower than the viewport, leaving a gutter on each side (>= 2rem on
+     small screens), capped at a comfortable reading width */
+  width: min(64rem, calc(100% - 4rem));
+  /* never taller than 4/5 of the screen; longer content scrolls inside */
+  max-height: 80vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem clamp(1rem, 5vw, 3rem) 2.5rem;
+  background: var(--bs-body-bg, #fff);
+  border-radius: 1rem 1rem 0 0;
+  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.25);
+  /* translateX centres it; translateY drives the slide-up */
+  transform: translate(-50%, 100%);
+  transition: transform 0.3s ease;
+}
+.jsheet--open .jsheet__panel {
+  transform: translate(-50%, 0);
+}
+.jsheet__panel:focus {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jsheet__backdrop,
+  .jsheet__panel {
+    transition: none;
+  }
+}
+
+.jsheet__grip {
+  display: block;
+  width: 2.5rem;
+  height: 0.25rem;
+  margin: 0 auto 0.9rem;
+  border-radius: 1rem;
+  background: var(--bs-border-color, #dee2e6);
+}
+/* stays put while a long sheet scrolls (panel is the scroll container) */
+.jsheet__close {
+  position: sticky;
+  top: 0;
+  float: right;
+  margin: -0.25rem -0.5rem 0.25rem 0.75rem;
+  z-index: 1;
+}
+.jsheet__head {
+  margin-bottom: 1rem;
+}
+.jsheet__year {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--bs-primary, #0d6efd);
+}
+.jsheet__body .lead {
+  font-size: 1.05rem;
+  font-weight: 400;
+}
+
+/* Projects is a navbar DROPDOWN, so it has no pill of its own to light up.
+   When the scroll-spy says the Projects section is in view, style the
+   dropdown toggle like an active nav-pill. */
+.nav-projects-active > .dropdown-toggle.nav-link {
+  color: var(--bs-nav-pills-link-active-color, #fff);
+  background-color: var(--bs-nav-pills-link-active-bg, var(--bs-primary, #0d6efd));
+  border-radius: var(--bs-nav-pills-border-radius, 0.375rem);
+}
+
+/* ===================================================================
+   Projects banner
+
+   A horizontal, scrollable strip of project thumbnails between the
+   Certifications and Journey sections. Each thumbnail links to that
+   project's detail page (/projects/<id>). Scales to any number of
+   items -- it just scrolls.
+   =================================================================== */
+.proj-scroller {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0 1rem;   /* room for the scrollbar below the cards */
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.proj-scroller__item {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.proj-card {
+  display: flex;
+  flex-direction: column;
+  width: clamp(15rem, 60vw, 22rem);
+  text-decoration: none;
+  color: inherit;
+}
+.proj-card__img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 0.75rem;
+  background: var(--bs-tertiary-bg, #f2f2f2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.proj-card__img--empty {
+  aspect-ratio: 16 / 10;
+}
+.proj-card__label {
+  margin-top: 0.6rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.proj-card:hover .proj-card__img,
+.proj-card:focus-visible .proj-card__img {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+}
+.proj-card:focus-visible {
+  outline: none;
+}
+.proj-card:focus-visible .proj-card__img {
+  outline: 2px solid var(--bs-primary, #0d6efd);
+  outline-offset: 2px;
+}
+.proj-card:hover .proj-card__label {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proj-card__img {
+    transition: none;
+  }
+}

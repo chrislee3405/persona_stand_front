@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import type { BaseSyntheticEvent, ChangeEvent } from 'react';
 import { useChat, type Message } from '../context/ChatContext';
+import {
+  TYPING_MS_PER_CHAR,
+  TYPING_MIN_MS,
+  TYPING_MAX_MS,
+  TYPING_JITTER_RATIO,
+  INITIAL_HOLD_MS,
+  TYPING_IDLE_MS,
+} from '../lib/knobs';
 
 function generateMessageId(): string {
   return (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -8,16 +16,10 @@ function generateMessageId(): string {
     : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// Tunable, mirrors the backend's _MIN_CHARS_PER_TURN hyperparameter in spirit:
-// each turn is revealed after a delay proportional to its length, simulating
-// a person typing it out, rather than all turns appearing at once.
-const TYPING_MS_PER_CHAR = 40;
-const TYPING_MIN_MS = 400;
-const TYPING_MAX_MS = 3000;
-// +/- this fraction of the base delay, randomized per turn -- a perfectly
-// deterministic length-proportional delay feels robotic; real typing speed
-// varies turn to turn.
-const TYPING_JITTER_RATIO = 0.25;
+// The typing-feel knobs (TYPING_*, INITIAL_HOLD_MS, TYPING_IDLE_MS) live in
+// src/lib/knobs.ts. The two constants below are NOT knobs -- they mirror
+// backend enforcement and must track it, so they stay next to the code that
+// uses them.
 
 // Mirrors the backend's _MAX_PENDING_PER_SESSION (rate_control_service.py)
 // so the UI can warn instantly instead of waiting on a round trip -- but
@@ -38,22 +40,12 @@ const MESSAGE_TOO_LONG_WARNING = `Message is too long (max ${MAX_MESSAGE_LENGTH}
 
 // --- Rapid-fire fragment batching -------------------------------------------
 // A submitted message isn't dispatched to the backend immediately. It's held
-// briefly first, in case the user is breaking one thought into several quick
-// WhatsApp-style bubbles ("Tell me about yourself" then "and your
-// background"). Pieces submitted during the hold window are concatenated
-// (single space) and sent as ONE backend turn, through the unchanged chat
-// flow (privacy gate -> consent -> rate control -> model_orchestration).
-//
-// INITIAL_HOLD_MS: grace window right after a submit, while the input sits
-//   empty, waiting to see whether a follow-up is coming.
-// TYPING_IDLE_MS: once the user has started typing a follow-up, how long
-//   typing must be idle (no keystroke, nothing submitted) before the held
-//   pieces flush as one turn. Reset on every keystroke.
-//
-// Both are frontend-only UX tuning -- no backend impact. Every message eats
-// at least INITIAL_HOLD_MS before dispatch, follow-up or not.
-const INITIAL_HOLD_MS = 1500;
-const TYPING_IDLE_MS = 5000;
+// briefly first (INITIAL_HOLD_MS / TYPING_IDLE_MS -- see src/lib/knobs.ts), in
+// case the user is breaking one thought into several quick WhatsApp-style
+// bubbles ("Tell me about yourself" then "and your background"). Pieces
+// submitted during the hold window are concatenated (single space) and sent
+// as ONE backend turn, through the unchanged chat flow (privacy gate ->
+// consent -> rate control -> model_orchestration).
 
 function typingDelayFor(text: string): number {
   const base = text.length * TYPING_MS_PER_CHAR;

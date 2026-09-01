@@ -1,30 +1,32 @@
-import { useEffect, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router-dom';
 import Nav from 'react-bootstrap/Nav';
 import { useSiteContent, pickImage } from '../hooks/useSiteContent';
 import { useActiveSection } from '../context/ActiveSectionContext';
 import { assetUrl } from '../lib/assetUrl';
+import {
+  type HeroOverrides,
+  type HeroConfig,
+  HERO_DEFAULTS,
+  QUAL_HERO_DEFAULTS,
+  CERT_HERO_DEFAULTS,
+  heroVars,
+  ANCHOR_OFFSET,
+  SCROLLSPY_LINE,
+} from '../lib/knobs';
 import './Home.css';
 
-const SECTION_IDS = ['about', 'qualifications', 'certifications', 'journey'] as const;
-
-/** Optional hero-framing overrides, all numbers. Any subset may be set on
- *  the personal_statement row's `hero` key to re-frame the photo from the
- *  database without a frontend redeploy; unset fields use HERO_DEFAULTS. */
-interface HeroOverrides {
-  fit?: 'cover' | 'fitHeight'; // how the photo sizes into the band (see below)
-  heightMin?: number;  // px  - hard floor on the hero band height
-  height?: number;     // vw  - preferred band height, as % of viewport WIDTH
-  heightMax?: number;  // px  - hard ceiling
-  focusX?: number;     // %   - object-position X (0 left .. 100 right)
-  focusY?: number;     // %   - object-position Y (0 top .. 100 bottom)
-  zoom?: number;       // >=1 - push into the focus point
-  scrimStart?: number; // %   - hero width where the page-bg scrim starts
-  scrimEnd?: number;   // %   - hero width where it's fully page-bg
-  textWidth?: number;  // %   - text column width on the right
-  mobileFocusX?: number; // % - backdrop horizontal slice at <= 900px
-  tinyFocusX?: number;   // % - backdrop horizontal slice at <= 480px
-}
+// Home-page scroll sections, top-to-bottom. Order MUST match the navbar's
+// SECTIONS list and the JSX below so the scroll-spy highlight stays in sync.
+const SECTION_IDS = [
+  'about',
+  'qualifications',
+  'certifications',
+  'projects',
+  'journey',
+  'contact',
+] as const;
 
 interface PersonalStatement {
   heading?: string;
@@ -33,10 +35,10 @@ interface PersonalStatement {
   hero?: HeroOverrides;      // About-section hero-band framing (see above)
   qualHero?: HeroOverrides;  // Qualifications-section banner framing (mirror: image right)
   certHero?: HeroOverrides;  // Certifications-section banner framing (image left, like About)
-  heroImage?: string;       // LEGACY: S3 key inline in the section JSON.
-                            // Images now live in the site_image table --
-                            // read via `images` / pickImage(). Kept only as
-                            // a fallback for rows written before that table.
+  // NOTE: no image key here. EVERY image on the site is fetched from the
+  // site_image table (via `images` / pickImage()) -- the hero included. An
+  // old `heroImage` key on a personal_statement row is ignored; migrate it
+  // to a site_image ("personal_statement", "hero") row.
 }
 
 interface Qualification {
@@ -55,133 +57,48 @@ interface Certification {
   detail?: string | null;
 }
 
+/** One project shown as a thumbnail in the horizontally scrollable Projects
+ *  banner. `content.projects` is an array of these (site_content section
+ *  "projects"). The thumbnail links to that project's detail page at
+ *  `/projects/<id>` (so `id` must match the route). The picture is NOT a
+ *  path in this row -- `image_tag` names a site_image row (section
+ *  "projects", description == image_tag, defaulting to `id`) and the URL is
+ *  built from that row's `image_path`. Every image path comes from
+ *  site_image. */
+interface Project {
+  id: string;          // stable key AND route slug: /projects/<id>
+  label: string;       // caption + <img alt>
+  image_tag?: string;  // site_image description for the thumbnail (defaults to `id`)
+}
+
+/** Contact section copy (site_content section "contact"). */
+interface ContactInfo {
+  intro?: string | null;
+  email?: string;
+  location?: string;
+  links?: { label: string; href: string }[];
+}
+
 interface JourneyBlock {
   id: string;
   year: string;
   title: string;
   body: string;
+  image_tag?: string;   // optional: names a site_image row -- section
+                        // "journey", description == this value. Its
+                        // image_path is shown opposite the card. A
+                        // "<placeholder>"-style value counts as unset.
 }
 
-// Keeps a section's heading clear of the sticky navbar when scrolled to via
-// its anchor. Roughly navbar height + a little breathing room.
-const anchorOffset = { scrollMarginTop: '5.5rem' } as const;
-
-/**
- * ─── About-section hero controls ────────────────────────────────────
- * The hero is a fixed, height-CLAMPED band sitting flush under the
- * sticky navbar (no layout shift -- the band's height is explicit and
- * image-independent). `fit` chooses how the photo sizes into it:
- * 'cover' fills the band and crops; 'fitHeight' shows the whole photo at
- * full height on the left and leaves the right as page background.
- * `focusX/focusY` frame the photo; `zoom` pushes in. A page-background
- * scrim on the right (`scrimStart`..`scrimEnd`, auto-capped to the text
- * column) GUARANTEES the text sits on a clean background no matter the
- * photo or the other values.
- *
- * Every knob is a plain number and every one is overridable per
- * deployment from the personal_statement row's `hero` key
- * (HeroOverrides) -- framing can change from the database, no redeploy.
- */
-const HERO_DEFAULTS = {
-  /** How the photo sizes into the band:
-   *  'cover'     - fill the whole band; crop top/bottom (or sides) to do it.
-   *                Uses focusX/focusY to choose which part survives.
-   *  'fitHeight' - show the photo's FULL height, uncropped; its width is
-   *                whatever the aspect gives, so it only covers the LEFT
-   *                part of the band and the rest is page background (fine --
-   *                the text lives there). focusY then does nothing; focusX
-   *                slides the whole photo left<->right in the band. */
-  fit: 'fitHeight' as 'cover' | 'fitHeight',
-
-  /** Band height, as `clamp(heightMin, height, heightMax)`.
-   *  `height` is a percent of the viewport WIDTH (vw), not height -- so the
-   *  band keeps a constant shape across screens of the same aspect ratio
-   *  regardless of resolution, and in 'fitHeight' mode the photo stays a
-   *  stable fraction of the screen width relative to the text.
-   *  `heightMin` / `heightMax` are px bounds that cap the extremes.
-   *  In 'fitHeight' mode the band height also sets the photo WIDTH
-   *  (width = height x photo-aspect), so keep heightMax modest or the photo
-   *  grows wide enough to reach the text on big screens.
-   *  height    UP -> taller band / wider photo.
-   *  heightMax UP -> allows a bigger band before the px ceiling bites. */
-  height: 40,
-  heightMin: 420,
-  heightMax: 900,
-
-  /** Which point of the photo stays framed as the band crops it, in %
-   *  (CSS background-position: it aligns THIS point of the photo with the
-   *  same point of the band). 50/50 = photo centre pinned to band centre,
-   *  so whatever a given screen's aspect ratio crops, it comes off both
-   *  sides evenly and a centred subject stays put on every screen. Move
-   *  away from 50 only if the subject genuinely sits off-centre.
-   *  focusX  DOWN -> keep more of the LEFT;  UP -> more of the right.
-   *          In 'fitHeight' mode the photo is narrower than the band, so
-   *          focusX just positions it: 0 = flush LEFT (leaves the right for
-   *          text), 50 = centred, 100 = flush right.
-   *  focusY  DOWN -> keep more HEADROOM (top); UP -> more torso (bottom).
-   *          ('fitHeight' shows the whole height, so focusY does nothing.) */
-  focusX: 0,
-  focusY: 15,
-
-  /** Zoom toward the focus point. 1 = widest (cover, no extra crop);
-   *  >1 pushes in -- hides the photo's outer edges, subject bigger. Values
-   *  below 1 are clamped to 1 (they would expose empty gaps).
-   *  Only applies in 'cover' mode. In 'fitHeight' it is IGNORED (forced to
-   *  1), because scaling there also widens the photo -- pushing the right
-   *  side back under the text; size the fitHeight photo with `height`.
-   *  NOTE: on a wide band, `cover` already shows the photo's full width at
-   *  zoom 1, so `focusX` only bites once zoom > 1 creates horizontal slack.
-   *  UP -> tighter on the subject.  DOWN -> more of the scene. */
-  zoom: 1.0,
-
-  /** Right-side page-background scrim, as % of the hero's own width. The
-   *  photo shows untouched up to `scrimStart`, then the page background
-   *  paints over it, fully opaque by `scrimEnd`. `scrimEnd` is auto-capped
-   *  to the text column's left edge (100 - textWidth), so the text is
-   *  ALWAYS on a clean background whatever you set here.
-   *  scrimStart DOWN -> background reaches further left (photo quieter).
-   *  scrimEnd   DOWN -> sharper hand-off;  UP -> softer, longer blend. */
-  scrimStart: 44,
-  scrimEnd: 58,
-
-  /** Text column width on the right, % of the page container. Also the
-   *  hard right limit the scrim can reach.
-   *  UP -> wider text block, starts further left.  DOWN -> narrower. */
-  textWidth: 40,
-
-  /** NARROW screens only. Below 900px the layout stacks: the photo becomes
-   *  a faint full-height backdrop that's wider than the viewport, so this
-   *  picks which horizontal slice shows (background-position X, %).
-   *  mobileFocusX -> <= 900px.   tinyFocusX -> <= 480px (phones).
-   *  DOWN -> shift the visible slice LEFT (you sit centre-left of the
-   *  photo, so ~20-30 keeps your face in view).  UP -> shift right. */
-  mobileFocusX: 30,
-  tinyFocusX: 20,
-};
-
-type HeroConfig = typeof HERO_DEFAULTS;
-
-/** Resolved hero config -> inline CSS custom properties for the <section>. */
-function heroVars(c: HeroConfig): CSSProperties {
-  // The scrim may never finish to the right of where the text begins.
-  const scrimEnd = Math.min(c.scrimEnd, 100 - c.textWidth);
-  const scrimStart = Math.min(c.scrimStart, scrimEnd - 1);
-  return {
-    '--hero-bg-size': c.fit === 'fitHeight' ? 'auto 100%' : 'cover',
-    '--hero-h': `${c.height}vw`,
-    '--hero-h-min': `${c.heightMin}px`,
-    '--hero-h-max': `${c.heightMax}px`,
-    '--hero-focus-x': `${c.focusX}%`,
-    '--hero-focus-y': `${c.focusY}%`,
-    // zoom only makes sense for 'cover'; in 'fitHeight' it would re-widen
-    // the photo back under the text, so force it to 1 there.
-    '--hero-zoom': c.fit === 'fitHeight' ? '1' : String(Math.max(1, c.zoom)),
-    '--hero-scrim-start': `${scrimStart}%`,
-    '--hero-scrim-end': `${scrimEnd}%`,
-    '--hero-text-width': `${c.textWidth}%`,
-    '--hero-mobile-focus-x': `${c.mobileFocusX}%`,
-    '--hero-tiny-focus-x': `${c.tinyFocusX}%`,
-  } as CSSProperties;
+/** Expanded copy for one journey block, shown in the bottom sheet when its
+ *  card is clicked. Comes from the site_journey table (journeyDetails map,
+ *  keyed by the block's id). A block with no entry has a non-clickable card. */
+interface JourneyDetail {
+  heading?: string;    // sheet title; falls back to the block's `title`
+  subtitle?: string;   // one italic line under the title (place / role)
+  body?: string;       // main text; blank lines -> paragraphs
+  highlights?: string[];                       // bullet list under the body
+  links?: { label: string; href: string }[];  // related links as buttons
 }
 
 /**
@@ -244,15 +161,125 @@ function Prose({ text }: { text?: string }) {
 }
 
 /**
+ * Bottom "sheet" pop-up with the expanded story for one Journey block.
+ * `detail` is the site_journey content; `block` supplies the year label and
+ * the fallback title. Always mounted, portalled to <body>; `open` toggles a
+ * class that slides the panel up from the bottom edge. Esc / the backdrop /
+ * the close button dismiss it, and body scroll is locked while it is up.
+ * The last block/detail stay rendered after close so the panel doesn't
+ * blank as it slides away.
+ */
+function JourneySheet({
+  open,
+  block,
+  detail,
+  onClose,
+}: {
+  open: boolean;
+  block?: JourneyBlock;
+  detail?: JourneyDetail;
+  onClose: () => void;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    panelRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
+  const title = detail?.heading ?? block?.title ?? '';
+  const highlights = (detail?.highlights ?? []).filter(Boolean);
+  const links = (detail?.links ?? []).filter(l => l && l.href);
+
+  return createPortal(
+    <div className={`jsheet${open ? ' jsheet--open' : ''}`} aria-hidden={!open}>
+      <div className="jsheet__backdrop" onClick={onClose} />
+      <div
+        className="jsheet__panel"
+        ref={panelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="jsheet-title"
+      >
+        <button
+          type="button"
+          className="btn-close jsheet__close"
+          aria-label="Close"
+          onClick={onClose}
+        />
+        <span className="jsheet__grip" aria-hidden="true" />
+        <div className="jsheet__head">
+          {block?.year && <span className="jsheet__year">{block.year}</span>}
+          <h2 id="jsheet-title" className="h4 mb-0">{title}</h2>
+        </div>
+        <div className="jsheet__body">
+          {detail?.subtitle && (
+            <p className="text-secondary fst-italic mb-3">{detail.subtitle}</p>
+          )}
+          <Prose text={detail?.body} />
+          {highlights.length > 0 && (
+            <ul className="mt-3">
+              {highlights.map((h, i) => (
+                <li key={i} className="mb-2">{h}</li>
+              ))}
+            </ul>
+          )}
+          {links.length > 0 && (
+            <div className="d-flex flex-wrap gap-2 mt-4">
+              {links.map((l, i) =>
+                /^https?:\/\//i.test(l.href) ? (
+                  <a
+                    key={i}
+                    className="btn btn-outline-primary btn-sm"
+                    href={l.href}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {l.label}
+                  </a>
+                ) : (
+                  <NavLink key={i} className="btn btn-outline-primary btn-sm" to={l.href}>
+                    {l.label}
+                  </NavLink>
+                ),
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/**
  * Single scrolling landing page. About / Qualifications & Awards /
- * Certifications / Journey are <section>s with anchor ids ("about",
- * "qualifications", "certifications", "journey"); the navbar links scroll to
- * them instead of routing to separate pages.
+ * Certifications / Projects / Journey / Contact are <section>s with anchor
+ * ids (see SECTION_IDS); the navbar links scroll to them instead of routing
+ * to separate pages, and the scroll-spy highlights the one in view.
  */
 export default function Home() {
-  const { content, images, loading } = useSiteContent();
+  const { content, images, journeyDetails, loading } = useSiteContent();
   const { hash } = useLocation();
   const { setActiveSection } = useActiveSection();
+
+  // Journey click-through sheet. `sheet` holds the block + its detail;
+  // `sheetOpen` drives the slide animation. `sheet` is left in place after
+  // close (overwritten on the next open) so the panel keeps its content as
+  // it slides away instead of blanking.
+  const [sheet, setSheet] = useState<{ block: JourneyBlock; detail: JourneyDetail } | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   // Scroll to the section named in the URL hash (e.g. /#journey) on first
   // load and whenever the hash changes. Re-run once content finishes
@@ -270,13 +297,16 @@ export default function Home() {
   // survives sections swapping nodes when content loads (plain <section>
   // -> <HeroBand>). Re-runs on `loading` to set the right initial pill.
   useEffect(() => {
-    // "You are here" line: navbar height (~72px) + a little breathing room.
-    const LINE = 110;
     const update = () => {
       let current: string = SECTION_IDS[0];
       for (const id of SECTION_IDS) {
         const el = document.getElementById(id);
-        if (el && el.getBoundingClientRect().top - LINE <= 0) current = id;
+        if (el && el.getBoundingClientRect().top - SCROLLSPY_LINE <= 0) current = id;
+      }
+      // At the very bottom of the page, light the last section even if it's
+      // too short to have crossed the line.
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+        current = SECTION_IDS[SECTION_IDS.length - 1];
       }
       setActiveSection(current);
     };
@@ -293,24 +323,18 @@ export default function Home() {
   const statement = (content.personal_statement ?? {}) as PersonalStatement;
   const ctaLabel = statement.cta?.label ?? 'Chat with my virtual persona';
   const ctaHref = statement.cta?.href ?? '/chatroom';
-  // Hero image comes from the site_image table (slot "hero"); fall back to
-  // the legacy heroImage key for personal_statement rows written before it.
-  const heroSrc = assetUrl(pickImage(images, 'personal_statement', 'hero') ?? statement.heroImage);
+  // Hero image -- like every image on the site -- comes only from the
+  // site_image table (section "personal_statement", slot "hero").
+  const heroSrc = assetUrl(pickImage(images, 'personal_statement', 'hero'));
   // Code defaults, overridable per deployment from personal_statement.hero.
   const aboutCfg: HeroConfig = { ...HERO_DEFAULTS, ...statement.hero };
 
   // Qualifications banner: mirror of the hero -- image solid on the RIGHT,
   // fading left; text on the left. Reads the site_image ('qualifications',
-  // 'banner') slot; falls back to the plain section when unset.
+  // 'banner') slot; falls back to the plain section when unset. Framing
+  // numbers live in lib/knobs.ts (QUAL_HERO_DEFAULTS).
   const qualImg = assetUrl(pickImage(images, 'qualifications', 'banner'));
-  const qualCfg: HeroConfig = {
-    ...HERO_DEFAULTS,
-    focusX: 100,      // photo anchored to the right edge (subject is far right)
-    textWidth: 56,    // wide text column -- ok for the scrim to cover more of
-    scrimStart: 26,   // the photo's left/centre since the subject sits far right
-    scrimEnd: 46,
-    ...statement.qualHero,
-  };
+  const qualCfg: HeroConfig = { ...QUAL_HERO_DEFAULTS, ...statement.qualHero };
 
   const qRaw = content.qualifications;
   const qualifications = (Array.isArray(qRaw) ? qRaw : []) as Qualification[];
@@ -322,11 +346,24 @@ export default function Home() {
 
   // Certifications banner: same orientation as the hero (image left, text
   // right) for an alternating rhythm with the flipped Qualifications band.
-  // Reads the site_image ('certifications', 'banner') slot.
+  // Reads the site_image ('certifications', 'banner') slot. Framing numbers
+  // live in lib/knobs.ts (CERT_HERO_DEFAULTS).
   const certImg = assetUrl(pickImage(images, 'certifications', 'banner'));
-  const certCfg: HeroConfig = { ...HERO_DEFAULTS, ...statement.certHero };
+  const certCfg: HeroConfig = { ...CERT_HERO_DEFAULTS, ...statement.certHero };
 
   const journey = (Array.isArray(content.journey) ? content.journey : []) as JourneyBlock[];
+  // Expanded copy per block, keyed by block id (site_journey table). A block
+  // with an entry here gets a clickable card that opens the bottom sheet.
+  const journeyDetailMap = journeyDetails as Record<string, JourneyDetail | undefined>;
+  const openJourneySheet = (block: JourneyBlock, detail: JourneyDetail) => {
+    setSheet({ block, detail });
+    setSheetOpen(true);
+  };
+
+  const projectItems = (Array.isArray(content.projects) ? content.projects : []) as Project[];
+
+  const contact = (content.contact ?? {}) as ContactInfo;
+  const contactLinks = Array.isArray(contact.links) ? contact.links : [];
 
   const aboutText = (
     <>
@@ -404,13 +441,13 @@ export default function Home() {
           id="about"
           imageSrc={heroSrc}
           cfg={aboutCfg}
-          anchorStyle={anchorOffset}
+          anchorStyle={ANCHOR_OFFSET}
           ariaLabel={statement.heading ?? 'Portrait'}
         >
           {aboutText}
         </HeroBand>
       ) : (
-        <section id="about" style={anchorOffset} className="my-5">
+        <section id="about" style={ANCHOR_OFFSET} className="my-5">
           <div className="row align-items-center g-5">
             <div className="col-12 col-md-6">
               <div
@@ -436,13 +473,13 @@ export default function Home() {
           imageSrc={qualImg}
           cfg={qualCfg}
           flip
-          anchorStyle={anchorOffset}
+          anchorStyle={ANCHOR_OFFSET}
           ariaLabel="Qualifications & Awards"
         >
           {qualContent}
         </HeroBand>
       ) : (
-        <section id="qualifications" style={anchorOffset} className="my-5 pt-4 border-top">
+        <section id="qualifications" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
           {qualContent}
         </section>
       )}
@@ -453,19 +490,51 @@ export default function Home() {
           id="certifications"
           imageSrc={certImg}
           cfg={certCfg}
-          anchorStyle={anchorOffset}
+          anchorStyle={ANCHOR_OFFSET}
           ariaLabel="Certifications"
         >
           {certContent}
         </HeroBand>
       ) : (
-        <section id="certifications" style={anchorOffset} className="my-5 pt-4 border-top">
+        <section id="certifications" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
           {certContent}
         </section>
       )}
 
+      {/* ===== Projects ===== */}
+      <section id="projects" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
+        <h2 className="mb-4">Projects</h2>
+
+        {loading && <p className="text-muted">Loading…</p>}
+        {!loading && projectItems.length === 0 && (
+          <p className="text-muted">No projects content yet.</p>
+        )}
+
+        {projectItems.length > 0 && (
+          <ul className="proj-scroller" role="list">
+            {projectItems.map(p => {
+              // Thumbnail URL is always resolved from the site_image table
+              // (section "projects", description == image_tag or id).
+              const thumb = assetUrl(pickImage(images, 'projects', p.image_tag ?? p.id));
+              return (
+                <li key={p.id} className="proj-scroller__item">
+                  <NavLink className="proj-card" to={`/projects/${p.id}`}>
+                    {thumb ? (
+                      <img className="proj-card__img" src={thumb} alt={p.label} loading="lazy" />
+                    ) : (
+                      <span className="proj-card__img proj-card__img--empty" aria-hidden="true" />
+                    )}
+                    <span className="proj-card__label">{p.label}</span>
+                  </NavLink>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
       {/* ===== Journey ===== */}
-      <section id="journey" style={anchorOffset} className="my-5 pt-4 border-top">
+      <section id="journey" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
         <h2 className="mb-4">My Journey</h2>
 
         {loading && <p className="text-muted">Loading…</p>}
@@ -473,14 +542,116 @@ export default function Home() {
           <p className="text-muted">No journey content yet.</p>
         )}
 
-        {journey.map(block => (
-          <div key={block.id} id={block.id} style={anchorOffset} className="my-5">
-            <div className="text-secondary fw-bold">{block.year}</div>
-            <h3>{block.title}</h3>
-            <Prose text={block.body} />
-          </div>
-        ))}
+        {journey.length > 0 && (
+          <ol className="jtl" role="list">
+            {journey.map((block, i) => {
+              const isNow = i === journey.length - 1;
+              // Optional per-block image: `image_tag` names a site_image slot
+              // (section "journey", description == image_tag). Its image_path
+              // shows on the OPPOSITE side of the card. A "<placeholder>"-style
+              // value, or no matching row, means no image.
+              const tag = block.image_tag?.trim();
+              const blockImg =
+                tag && !/^<.*>$/.test(tag)
+                  ? assetUrl(pickImage(images, 'journey', tag))
+                  : undefined;
+              // A block with a site_journey entry gets a clickable card that
+              // opens the bottom sheet; otherwise the card is a plain <div>.
+              const detail = journeyDetailMap[block.id];
+              const hasDetail = !!detail && typeof detail === 'object';
+              const cardInner = (
+                <div className="jtl__card-inner">
+                  {isNow && <span className="jtl__badge">Now</span>}
+                  <p className="jtl__year">{block.year}</p>
+                  <h3 className="jtl__title h5">{block.title}</h3>
+                  <Prose text={block.body} />
+                  {hasDetail && (
+                    <span className="jtl__more" aria-hidden="true">Read more →</span>
+                  )}
+                </div>
+              );
+              return (
+                <li
+                  key={block.id}
+                  id={block.id}
+                  style={ANCHOR_OFFSET}
+                  className={
+                    `jtl__item${isNow ? ' jtl__item--now' : ''}` +
+                    `${blockImg ? ' jtl__item--has-img' : ''}`
+                  }
+                >
+                  <span className="jtl__dot" aria-hidden="true" />
+                  {hasDetail ? (
+                    <button
+                      type="button"
+                      className="jtl__card jtl__card--btn"
+                      aria-haspopup="dialog"
+                      onClick={() => openJourneySheet(block, detail as JourneyDetail)}
+                    >
+                      {cardInner}
+                    </button>
+                  ) : (
+                    <div className="jtl__card">{cardInner}</div>
+                  )}
+                  {blockImg && (
+                    <div className="jtl__media">
+                      <img src={blockImg} alt="" loading="lazy" />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        )}
       </section>
+
+      {/* ===== Contact ===== */}
+      <section id="contact" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
+        <h2 className="mb-4">Contact Me</h2>
+
+        {loading && <p className="text-muted">Loading…</p>}
+        {contact.intro && <p className="lead text-secondary lh-base">{contact.intro}</p>}
+
+        {(contact.email || contact.location) && (
+          <dl className="row">
+            {contact.email && (
+              <>
+                <dt className="col-sm-3 col-lg-2">Email</dt>
+                <dd className="col-sm-9">
+                  <a href={`mailto:${contact.email}`}>{contact.email}</a>
+                </dd>
+              </>
+            )}
+            {contact.location && (
+              <>
+                <dt className="col-sm-3 col-lg-2">Location</dt>
+                <dd className="col-sm-9">{contact.location}</dd>
+              </>
+            )}
+          </dl>
+        )}
+
+        {contactLinks.length > 0 && (
+          <ul className="list-unstyled mb-0">
+            {contactLinks.map(link => (
+              <li key={link.href} className="mb-2">
+                <a href={link.href} target="_blank" rel="noreferrer">{link.label}</a>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!loading && !contact.intro && !contact.email && !contact.location && contactLinks.length === 0 && (
+          <p className="text-muted">No contact content yet.</p>
+        )}
+      </section>
+
+      <JourneySheet
+        open={sheetOpen}
+        block={sheet?.block}
+        detail={sheet?.detail}
+        onClose={() => setSheetOpen(false)}
+      />
 
     </div>
   );
