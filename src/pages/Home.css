@@ -549,11 +549,13 @@ html {
   width: min(64rem, calc(100% - 4rem));
   /* never taller than 4/5 of the screen; longer content scrolls inside */
   max-height: 80vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 1rem clamp(1rem, 5vw, 3rem) 2.5rem;
+  display: flex;
+  flex-direction: column;
+  /* visible (not hidden) so the corner close button can straddle the edge;
+     the rounded top corners still clip the panel's own background. */
+  overflow: visible;
   background: var(--bs-body-bg, #fff);
-  border-radius: 1rem 1rem 0 0;
+  border-radius: var(--sheet-radius, 1rem) var(--sheet-radius, 1rem) 0 0;
   box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.25);
   /* translateX centres it; translateY drives the slide-up */
   transform: translate(-50%, 100%);
@@ -573,21 +575,28 @@ html {
   }
 }
 
+/* fixed strip holding the drag-grip; the close button (a sibling) straddles
+   the panel corner above it */
+.jsheet__bar {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem 0.4rem;
+}
+/* the actual scroll area -- everything past 80vh scrolls in here */
+.jsheet__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem clamp(1rem, 5vw, 3rem) 2.5rem;
+}
+
 .jsheet__grip {
   display: block;
   width: 2.5rem;
   height: 0.25rem;
-  margin: 0 auto 0.9rem;
+  margin: 0 auto;
   border-radius: 1rem;
   background: var(--bs-border-color, #dee2e6);
-}
-/* stays put while a long sheet scrolls (panel is the scroll container) */
-.jsheet__close {
-  position: sticky;
-  top: 0;
-  float: right;
-  margin: -0.25rem -0.5rem 0.25rem 0.75rem;
-  z-index: 1;
 }
 .jsheet__head {
   margin-bottom: 1rem;
@@ -605,22 +614,64 @@ html {
   font-weight: 400;
 }
 
-/* Projects is a navbar DROPDOWN, so it has no pill of its own to light up.
-   When the scroll-spy says the Projects section is in view, style the
-   dropdown toggle like an active nav-pill. */
-.nav-projects-active > .dropdown-toggle.nav-link {
-  color: var(--bs-nav-pills-link-active-color, #fff);
-  background-color: var(--bs-nav-pills-link-active-bg, var(--bs-primary, #0d6efd));
-  border-radius: var(--bs-nav-pills-border-radius, 0.375rem);
+/* ---- shared close button -------------------------------------------
+   Circular ✕ used by BOTH the journey and project pop-ups. It's an
+   absolutely-positioned direct child of the panel; its centroid sits on
+   the 45° point of the panel's top-right rounded corner (0.293r in from
+   the square corner on each axis) so half the circle is over the sheet
+   and half over the backdrop. Below 900px it tucks fully inside so it
+   can't clip against the viewport edge. */
+.sheet-close {
+  position: absolute;
+  top: calc(var(--sheet-radius, 1rem) * 0.2929);
+  right: calc(var(--sheet-radius, 1rem) * 0.2929);
+  transform: translate(50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sheet-close-size, 2.5rem);
+  height: var(--sheet-close-size, 2.5rem);
+  padding: 0;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 50%;
+  background: var(--bs-body-bg, #fff);
+  color: var(--bs-body-color, #212529);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  z-index: 3;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+.sheet-close::before {
+  content: "\2715";   /* ✕ */
+  font-size: calc(var(--sheet-close-size, 2.5rem) * 0.44);
+  line-height: 1;
+}
+.sheet-close:hover {
+  background: var(--bs-secondary-bg, #e9ecef);
+  transform: translate(50%, -50%) scale(1.06);
+}
+.sheet-close:focus-visible {
+  outline: 2px solid var(--bs-primary, #0d6efd);
+  outline-offset: 2px;
+}
+@media (max-width: 899.98px) {
+  .sheet-close {
+    top: 0.55rem;
+    right: 0.55rem;
+    transform: none;
+  }
+  .sheet-close:hover {
+    transform: scale(1.06);
+  }
 }
 
 /* ===================================================================
    Projects banner
 
    A horizontal, scrollable strip of project thumbnails between the
-   Certifications and Journey sections. Each thumbnail links to that
-   project's detail page (/projects/<id>). Scales to any number of
-   items -- it just scrolls.
+   Certifications and Journey sections. A thumbnail with a site_project
+   row is a <button> that opens the ProjectSheet pop-up; one without is a
+   plain <div>. Scales to any number of items -- it just scrolls.
    =================================================================== */
 .proj-scroller {
   list-style: none;
@@ -643,8 +694,19 @@ html {
   display: flex;
   flex-direction: column;
   width: clamp(15rem, 60vw, 22rem);
-  text-decoration: none;
   color: inherit;
+  text-align: inherit;
+}
+/* button reset, so a clickable card looks identical to a plain one */
+.proj-card--btn {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
 }
 .proj-card__img {
   display: block;
@@ -663,25 +725,206 @@ html {
   margin-top: 0.6rem;
   font-weight: 600;
   line-height: 1.3;
+  text-align: center;   /* centred under the thumbnail */
 }
-.proj-card:hover .proj-card__img,
-.proj-card:focus-visible .proj-card__img {
+/* interactivity only on the clickable variant */
+.proj-card--btn:hover .proj-card__img,
+.proj-card--btn:focus-visible .proj-card__img {
   transform: translateY(-3px);
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
 }
-.proj-card:focus-visible {
+.proj-card--btn:focus-visible {
   outline: none;
 }
-.proj-card:focus-visible .proj-card__img {
+.proj-card--btn:focus-visible .proj-card__img {
   outline: 2px solid var(--bs-primary, #0d6efd);
   outline-offset: 2px;
 }
-.proj-card:hover .proj-card__label {
+.proj-card--btn:hover .proj-card__label {
   text-decoration: underline;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .proj-card__img {
     transition: none;
+  }
+}
+
+/* ===================================================================
+   Project detail sheet (bottom pop-up)
+
+   Reuses the .jsheet layer + backdrop + slide from the journey sheet.
+   The panel is a flex column: a fixed bar (grip + close) over a single
+   scroll area laid out as two columns -- a STICKY write-up on the left,
+   a scrolling stack of feature-demo videos on the right.
+   =================================================================== */
+
+/* ---- size knobs -- tune these; the rest of .psheet is layout --------
+   --psheet-max-width   : cap on the panel width on wide screens
+   --psheet-side-gap    : min gutter kept on EACH side (wide screens)
+   --psheet-side-gap-sm : ditto, below 900px
+   --psheet-max-height  : cap on panel height (content scrolls past it)
+   --psheet-text-col   : width of the left text column (the videos take the
+                         rest); raise it to give the write-up more room
+   --sheet-radius       : sheet top-corner radius -- shared by BOTH the
+                          journey and project pop-ups; also anchors the
+                          circular corner close button (.sheet-close)
+   --sheet-close-size   : diameter of that close button */
+:root {
+  --psheet-max-width: 86rem;
+  --psheet-side-gap: 1.5rem;
+  --psheet-side-gap-sm: 0.80rem;
+  --psheet-max-height: 90vh;
+  --psheet-text-col: 34rem;
+  --sheet-radius: 1rem;
+  --sheet-close-size: 2.5rem;
+}
+
+.psheet__panel {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(
+    var(--psheet-max-width, 72rem),
+    calc(100% - 2 * var(--psheet-side-gap, 1.5rem))
+  );
+  max-height: var(--psheet-max-height, 85vh);
+  /* query container: the grid below stacks based on THIS width, not the
+     viewport, so it collapses whenever the video column would get narrower
+     than the text column (see @container rule) */
+  container: psheet / inline-size;
+  display: flex;
+  flex-direction: column;
+  /* visible (not hidden) so the corner close button can straddle the edge;
+     the rounded top corners still clip the panel's own background. */
+  overflow: visible;
+  background: var(--bs-body-bg, #fff);
+  border-radius: var(--sheet-radius, 1rem) var(--sheet-radius, 1rem) 0 0;
+  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.25);
+  transform: translate(-50%, 100%);
+  transition: transform 0.3s ease;
+}
+.jsheet--open .psheet__panel {
+  transform: translate(-50%, 0);
+}
+.psheet__panel:focus {
+  outline: none;
+}
+
+.psheet__bar {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem 0.4rem;
+}
+
+.psheet__grid {
+  flex: 1 1 auto;
+  min-height: 0;   /* flex child: scroll inside the panel, don't stretch it */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  grid-template-columns: minmax(20rem, 25rem) 1fr;
+  gap: 2.5rem;
+  padding: 0.5rem clamp(1rem, 4vw, 2.5rem) 2.5rem;
+}
+.psheet__aside {
+  position: sticky;
+  top: 0.5rem;
+  align-self: start;
+}
+
+/* Stack (text on top, videos below) once the panel gets narrow. Measured on
+   PANEL width, not viewport, so it holds regardless of --psheet-max-width or
+   how the panel is placed. 64.5rem panel ~= 1080px viewport (panel is
+   viewport minus the 2x1.5rem side gutters); raise it to collapse sooner. */
+@container psheet (max-width: 64.5rem) {
+  .psheet__grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .psheet__aside {
+    position: static;
+  }
+}
+.psheet__h {
+  margin: 1.4rem 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color, #6c757d);
+}
+.psheet__aside .lead {
+  font-size: 1rem;
+  margin-bottom: 0;
+}
+.psheet__list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.psheet__list li {
+  margin-bottom: 0.35rem;
+}
+.psheet__tech {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.psheet__tech li {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.15rem 0.6rem;
+  border-radius: 1rem;
+  background: var(--bs-tertiary-bg, #f0f0f0);
+}
+.psheet__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+.psheet__media {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  min-width: 0;
+}
+.psheet__video {
+  margin: 0;
+}
+.psheet__video video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 0.75rem;
+  background: #000;
+  pointer-events: none;   /* can't pause / scrub / right-click -- the "inline media" pattern */
+}
+.psheet__video figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--bs-secondary-color, #666);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .psheet__panel {
+    transition: none;
+  }
+}
+
+@media (max-width: 899.98px) {
+  .psheet__panel {
+    width: calc(100% - 2 * var(--psheet-side-gap-sm, 0.75rem));
+  }
+  .psheet__grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .psheet__aside {
+    position: static;
   }
 }

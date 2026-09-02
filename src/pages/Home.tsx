@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router-dom';
 import Nav from 'react-bootstrap/Nav';
 import { useSiteContent, pickImage } from '../hooks/useSiteContent';
+import { useMediaPrefetch } from '../hooks/useMediaPrefetch';
 import { useActiveSection } from '../context/ActiveSectionContext';
 import { assetUrl } from '../lib/assetUrl';
+import Prose from '../components/Prose';
+import ProjectSheet, { type ProjectSheetData } from './ProjectSheet';
+import githubIcon from '../assets/icons/github.png';
+import linkedinIcon from '../assets/icons/linkin.png';
 import {
   type HeroOverrides,
   type HeroConfig,
@@ -59,16 +64,28 @@ interface Certification {
 
 /** One project shown as a thumbnail in the horizontally scrollable Projects
  *  banner. `content.projects` is an array of these (site_content section
- *  "projects"). The thumbnail links to that project's detail page at
- *  `/projects/<id>` (so `id` must match the route). The picture is NOT a
- *  path in this row -- `image_tag` names a site_image row (section
- *  "projects", description == image_tag, defaulting to `id`) and the URL is
- *  built from that row's `image_path`. Every image path comes from
- *  site_image. */
+ *  "projects"). Clicking a thumbnail opens the ProjectSheet pop-up for that
+ *  `id` (there are no per-project pages). The picture is NOT a path in this
+ *  row -- `image_tag` names a site_image row (section "projects",
+ *  description == image_tag, defaulting to `id`) and the URL is built from
+ *  that row's `image_path`. Every image path comes from site_image. */
 interface Project {
-  id: string;          // stable key AND route slug: /projects/<id>
-  label: string;       // caption + <img alt>
+  id: string;          // stable key; also the site_project.project_id
+  label: string;       // caption + <img alt> + sheet heading
   image_tag?: string;  // site_image description for the thumbnail (defaults to `id`)
+}
+
+/** Raw detail for one project (site_project table, keyed by project id).
+ *  `videos[].src_tag` / `poster_tag` name site_image rows whose image_path
+ *  is the .mp4 / .jpg S3 key; Home resolves them to URLs before handing the
+ *  data to <ProjectSheet>. */
+interface ProjectDetail {
+  overview?: string;
+  features?: string[];
+  technologies?: string[];
+  githubUrl?: string;
+  demoUrl?: string;
+  videos?: { src_tag: string; poster_tag?: string; caption?: string }[];
 }
 
 /** Contact section copy (site_content section "contact"). */
@@ -144,23 +161,6 @@ function HeroBand({
 }
 
 /**
- * Renders body text stored as a single string, splitting on blank lines so
- * "\n\n" in the content becomes real paragraphs instead of collapsed
- * whitespace.
- */
-function Prose({ text }: { text?: string }) {
-  const paragraphs = (text ?? '').split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
-  if (paragraphs.length === 0) return null;
-  return (
-    <>
-      {paragraphs.map((para, i) => (
-        <p key={i} className="lead text-secondary lh-base">{para}</p>
-      ))}
-    </>
-  );
-}
-
-/**
  * Bottom "sheet" pop-up with the expanded story for one Journey block.
  * `detail` is the site_journey content; `block` supplies the year label and
  * the fallback title. Always mounted, portalled to <body>; `open` toggles a
@@ -214,48 +214,52 @@ function JourneySheet({
       >
         <button
           type="button"
-          className="btn-close jsheet__close"
+          className="sheet-close"
           aria-label="Close"
           onClick={onClose}
         />
-        <span className="jsheet__grip" aria-hidden="true" />
-        <div className="jsheet__head">
-          {block?.year && <span className="jsheet__year">{block.year}</span>}
-          <h2 id="jsheet-title" className="h4 mb-0">{title}</h2>
+        <div className="jsheet__bar">
+          <span className="jsheet__grip" aria-hidden="true" />
         </div>
-        <div className="jsheet__body">
-          {detail?.subtitle && (
-            <p className="text-secondary fst-italic mb-3">{detail.subtitle}</p>
-          )}
-          <Prose text={detail?.body} />
-          {highlights.length > 0 && (
-            <ul className="mt-3">
-              {highlights.map((h, i) => (
-                <li key={i} className="mb-2">{h}</li>
-              ))}
-            </ul>
-          )}
-          {links.length > 0 && (
-            <div className="d-flex flex-wrap gap-2 mt-4">
-              {links.map((l, i) =>
-                /^https?:\/\//i.test(l.href) ? (
-                  <a
-                    key={i}
-                    className="btn btn-outline-primary btn-sm"
-                    href={l.href}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {l.label}
-                  </a>
-                ) : (
-                  <NavLink key={i} className="btn btn-outline-primary btn-sm" to={l.href}>
-                    {l.label}
-                  </NavLink>
-                ),
-              )}
-            </div>
-          )}
+        <div className="jsheet__scroll">
+          <div className="jsheet__head">
+            {block?.year && <span className="jsheet__year">{block.year}</span>}
+            <h2 id="jsheet-title" className="h4 mb-0">{title}</h2>
+          </div>
+          <div className="jsheet__body">
+            {detail?.subtitle && (
+              <p className="text-secondary fst-italic mb-3">{detail.subtitle}</p>
+            )}
+            <Prose text={detail?.body} />
+            {highlights.length > 0 && (
+              <ul className="mt-3">
+                {highlights.map((h, i) => (
+                  <li key={i} className="mb-2">{h}</li>
+                ))}
+              </ul>
+            )}
+            {links.length > 0 && (
+              <div className="d-flex flex-wrap gap-2 mt-4">
+                {links.map((l, i) =>
+                  /^https?:\/\//i.test(l.href) ? (
+                    <a
+                      key={i}
+                      className="btn btn-outline-primary btn-sm"
+                      href={l.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {l.label}
+                    </a>
+                  ) : (
+                    <NavLink key={i} className="btn btn-outline-primary btn-sm" to={l.href}>
+                      {l.label}
+                    </NavLink>
+                  ),
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>,
@@ -270,7 +274,7 @@ function JourneySheet({
  * to separate pages, and the scroll-spy highlights the one in view.
  */
 export default function Home() {
-  const { content, images, journeyDetails, loading } = useSiteContent();
+  const { content, images, journeyDetails, projectDetails, loading } = useSiteContent();
   const { hash } = useLocation();
   const { setActiveSection } = useActiveSection();
 
@@ -280,6 +284,12 @@ export default function Home() {
   // it slides away instead of blanking.
   const [sheet, setSheet] = useState<{ block: JourneyBlock; detail: JourneyDetail } | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Project click-through sheet -- same "keep last content through the
+  // close animation" trick. `projectSheet` holds the already-resolved data
+  // (video S3 keys turned into URLs); `projectSheetOpen` drives the slide.
+  const [projectSheet, setProjectSheet] = useState<ProjectSheetData | null>(null);
+  const [projectSheetOpen, setProjectSheetOpen] = useState(false);
 
   // Scroll to the section named in the URL hash (e.g. /#journey) on first
   // load and whenever the hash changes. Re-run once content finishes
@@ -361,6 +371,55 @@ export default function Home() {
   };
 
   const projectItems = (Array.isArray(content.projects) ? content.projects : []) as Project[];
+  // Expanded copy per project, keyed by project id (site_project table). A
+  // thumbnail with an entry here is clickable and opens the bottom sheet.
+  const projectDetailMap = projectDetails as Record<string, ProjectDetail | undefined>;
+
+  // The FIRST demo clip (+ its poster) of each project, resolved from
+  // site_image. Warmed into the browser cache in the background (after the
+  // first interaction) so a project sheet opens with its lead video -- the
+  // one that auto-plays -- already there. The rest stream on demand as the
+  // viewer scrolls down to them. See useMediaPrefetch.
+  const projectMediaUrls = useMemo(() => {
+    const projects = Array.isArray(content.projects) ? (content.projects as Project[]) : [];
+    const details = projectDetails as Record<string, ProjectDetail | undefined>;
+    const out: string[] = [];
+    for (const p of projects) {
+      const first = details[p.id]?.videos?.[0];
+      if (!first) continue;
+      const src = first.src_tag ? assetUrl(pickImage(images, 'projects', first.src_tag)) : undefined;
+      const poster = first.poster_tag ? assetUrl(pickImage(images, 'projects', first.poster_tag)) : undefined;
+      if (src) out.push(src);
+      if (poster) out.push(poster);
+    }
+    return out;
+  }, [content, images, projectDetails]);
+  useMediaPrefetch(projectMediaUrls);
+  const openProjectSheet = (project: Project, detail: ProjectDetail) => {
+    // Resolve video / poster tags to CDN URLs here so <ProjectSheet> stays
+    // presentational. Drop any clip whose .mp4 tag doesn't resolve. Only
+    // look a tag up when it's actually set -- pickImage() with no
+    // description falls back to the section's first image.
+    const videos = (detail.videos ?? []).flatMap(v => {
+      const srcUrl = v.src_tag ? assetUrl(pickImage(images, 'projects', v.src_tag)) : undefined;
+      if (!srcUrl) return [];
+      return [{
+        srcUrl,
+        posterUrl: v.poster_tag ? assetUrl(pickImage(images, 'projects', v.poster_tag)) : undefined,
+        caption: v.caption,
+      }];
+    });
+    setProjectSheet({
+      label: project.label,
+      overview: detail.overview,
+      features: (detail.features ?? []).filter(Boolean),
+      technologies: (detail.technologies ?? []).filter(Boolean),
+      githubUrl: detail.githubUrl,
+      demoUrl: detail.demoUrl,
+      videos,
+    });
+    setProjectSheetOpen(true);
+  };
 
   const contact = (content.contact ?? {}) as ContactInfo;
   const contactLinks = Array.isArray(contact.links) ? contact.links : [];
@@ -516,16 +575,33 @@ export default function Home() {
               // Thumbnail URL is always resolved from the site_image table
               // (section "projects", description == image_tag or id).
               const thumb = assetUrl(pickImage(images, 'projects', p.image_tag ?? p.id));
+              // Clickable only when there's a site_project row to show.
+              const detail = projectDetailMap[p.id];
+              const hasDetail = !!detail && typeof detail === 'object';
+              const inner = (
+                <>
+                  {thumb ? (
+                    <img className="proj-card__img" src={thumb} alt={p.label} loading="lazy" />
+                  ) : (
+                    <span className="proj-card__img proj-card__img--empty" aria-hidden="true" />
+                  )}
+                  <span className="proj-card__label">{p.label}</span>
+                </>
+              );
               return (
                 <li key={p.id} className="proj-scroller__item">
-                  <NavLink className="proj-card" to={`/projects/${p.id}`}>
-                    {thumb ? (
-                      <img className="proj-card__img" src={thumb} alt={p.label} loading="lazy" />
-                    ) : (
-                      <span className="proj-card__img proj-card__img--empty" aria-hidden="true" />
-                    )}
-                    <span className="proj-card__label">{p.label}</span>
-                  </NavLink>
+                  {hasDetail ? (
+                    <button
+                      type="button"
+                      className="proj-card proj-card--btn"
+                      aria-haspopup="dialog"
+                      onClick={() => openProjectSheet(p, detail as ProjectDetail)}
+                    >
+                      {inner}
+                    </button>
+                  ) : (
+                    <div className="proj-card">{inner}</div>
+                  )}
                 </li>
               );
             })}
@@ -632,13 +708,32 @@ export default function Home() {
         )}
 
         {contactLinks.length > 0 && (
-          <ul className="list-unstyled mb-0">
-            {contactLinks.map(link => (
-              <li key={link.href} className="mb-2">
-                <a href={link.href} target="_blank" rel="noreferrer">{link.label}</a>
-              </li>
-            ))}
-          </ul>
+          <div className="d-flex flex-wrap align-items-center gap-3 mt-3">
+            {contactLinks.map(link => {
+              const label = link.label?.toLowerCase() ?? '';
+              const icon = /linked?in/.test(label)
+                ? linkedinIcon
+                : /github/.test(label)
+                  ? githubIcon
+                  : null;
+              return icon ? (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-body-secondary d-inline-flex"
+                  aria-label={link.label}
+                >
+                  <img src={icon} alt={link.label} width={28} height={28} />
+                </a>
+              ) : (
+                <a key={link.href} href={link.href} target="_blank" rel="noreferrer">
+                  {link.label}
+                </a>
+              );
+            })}
+          </div>
         )}
 
         {!loading && !contact.intro && !contact.email && !contact.location && contactLinks.length === 0 && (
@@ -651,6 +746,12 @@ export default function Home() {
         block={sheet?.block}
         detail={sheet?.detail}
         onClose={() => setSheetOpen(false)}
+      />
+
+      <ProjectSheet
+        open={projectSheetOpen}
+        data={projectSheet ?? undefined}
+        onClose={() => setProjectSheetOpen(false)}
       />
 
     </div>

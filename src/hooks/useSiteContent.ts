@@ -17,21 +17,23 @@ interface SiteImage {
  *   {
  *     content: { "<section>": <json for that section>, ... },
  *     images:  { "<section>": [ { description, path }, ... ], ... },
- *     journeyDetails: { "<journey block id>": <detail json>, ... }
+ *     journeyDetails: { "<journey block id>": <detail json>, ... },
+ *     projectDetails: { "<project id>": <detail json>, ... }
  *   }
  * Text lives in the `site_content` table (shape differs per section -- an
  * object for prose sections, an array for the journey timeline); images
  * live in the separate `site_image` table, keyed by section and a slot
- * `description` (e.g. "hero"); the expanded copy for the Journey
- * click-through pop-up lives in the `site_journey` table, keyed by a
- * journey block's `id`. All three are {} until the fetch resolves (and
- * stay {} if it fails), so pages must render a sensible empty/loading
- * state. Resolve an image `path` to a URL with assetUrl().
+ * `description` (e.g. "hero"); the expanded copy for the Journey and
+ * Projects click-through pop-ups lives in `site_journey` / `site_project`,
+ * keyed by a journey block's / project's `id`. All are {} until the fetch
+ * resolves (and stay {} if it fails), so pages must render a sensible
+ * empty/loading state. Resolve an image `path` to a URL with assetUrl().
  */
 export function useSiteContent() {
   const [content, setContent] = useState<Record<string, unknown>>({});
   const [images, setImages] = useState<Record<string, SiteImage[]>>({});
   const [journeyDetails, setJourneyDetails] = useState<Record<string, unknown>>({});
+  const [projectDetails, setProjectDetails] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,10 +47,15 @@ export function useSiteContent() {
         setJourneyDetails(
           data?.journeyDetails && typeof data.journeyDetails === 'object' ? data.journeyDetails : {},
         );
+        setProjectDetails(
+          data?.projectDetails && typeof data.projectDetails === 'object' ? data.projectDetails : {},
+        );
       })
       .catch(error => {
         console.error('Failed to load site content:', error);
-        if (!cancelled) { setContent({}); setImages({}); setJourneyDetails({}); }
+        if (!cancelled) {
+          setContent({}); setImages({}); setJourneyDetails({}); setProjectDetails({});
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -56,7 +63,7 @@ export function useSiteContent() {
     return () => { cancelled = true; };
   }, []);
 
-  return { content, images, journeyDetails, loading };
+  return { content, images, journeyDetails, projectDetails, loading };
 }
 
 /**

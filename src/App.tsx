@@ -7,8 +7,6 @@ import { ChatProvider } from './context/ChatContext.tsx'
 import { ActiveSectionProvider } from './context/ActiveSectionContext.tsx'
 
 import Home from './pages/Home.tsx'
-import PersonaStand from './pages/projects/PersonaStand.tsx'
-import RansomSimulator from './pages/projects/RansomSimulator.tsx'
 import Chatroom from './pages/Chatroom.tsx'
 
 
@@ -24,14 +22,17 @@ const router = createBrowserRouter([
       { path: "/", element: <Home /> },
 
       // Old per-page URLs still work -- redirect to the matching section anchor.
+      // Projects no longer have their own pages: each opens as a bottom sheet
+      // from its thumbnail in the Projects section, so any /projects/* URL
+      // just lands on that section.
       { path: "aboutme", element: <Navigate to="/#about" replace /> },
       { path: "qualifications", element: <Navigate to="/#qualifications" replace /> },
       { path: "certifications", element: <Navigate to="/#certifications" replace /> },
       { path: "journey", element: <Navigate to="/#journey" replace /> },
       { path: "contact", element: <Navigate to="/#contact" replace /> },
+      { path: "projects", element: <Navigate to="/#projects" replace /> },
+      { path: "projects/:slug", element: <Navigate to="/#projects" replace /> },
 
-      { path: "projects/persona-stand", element: <PersonaStand /> },
-      { path: "projects/ransom-simulator", element: <RansomSimulator /> },
       { path: "chatroom", element: <Chatroom /> },
     ]
   }

@@ -8,7 +8,8 @@ import type { CSSProperties } from 'react';
  *   2. Home page layout        (Home.tsx)
  *   3. Chatroom typing feel    (hooks/useChatDispatch.ts)
  * (Purely-CSS knobs stay as custom properties in the .css files:
- *  --jtl-* in Home.css for the journey timeline, etc.)
+ *  --jtl-* (journey timeline) and --psheet-* (project pop-up size) in
+ *  Home.css, etc.)
  * ═════════════════════════════════════════════════════════════════════
  */
 
