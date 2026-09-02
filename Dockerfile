@@ -7,6 +7,14 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+
+# Non-secret build config (VITE_CDN_BASE) is read by Vite from a frontend
+# `.env` file in the build context:
+#   - local build   -> your gitignored .env on disk (COPY brings it in)
+#   - GitHub Actions -> the workflow writes .env from the repo Variable
+#     before `docker build`
+# .env is gitignored, so it never reaches GitHub; only .env.local /
+# .env.*.local are dockerignored.
 RUN npm run build
 
 # --- Stage 2: Production ---

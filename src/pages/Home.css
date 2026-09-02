@@ -1,0 +1,930 @@
+/* ===================================================================
+   Hero band (used by About, and by Qualifications with `.hero-band--flip`)
+
+   A full-bleed, height-CLAMPED band. The photo fills it via
+   background-size (cover or "auto 100%"); a page-background scrim on one
+   side guarantees the text on that side stays on a clean background,
+   whatever the photo or the numbers.
+
+   Default: photo weighted LEFT, text on the RIGHT.
+   `.hero-band--flip`: photo weighted RIGHT, text on the LEFT (mirror).
+
+   Numeric knobs come from HERO_DEFAULTS (+ per-section / per-deployment
+   overrides) in Home.tsx as CSS custom properties (--hero-*); fallbacks
+   below match the code.
+   =================================================================== */
+
+/* Guard the full-bleed math against the horizontal scrollbar. `clip`
+   (unlike `hidden`) does not break the sticky navbar. */
+html {
+  overflow-x: clip;
+}
+
+.hero-band {
+  --_bg-size: var(--hero-bg-size, cover);
+  --_h: var(--hero-h, 46vw);   /* vw so the band keeps its shape across same-ratio screens */
+  --_h-min: var(--hero-h-min, 420px);
+  --_h-max: var(--hero-h-max, 1000px);
+  --_focus-x: var(--hero-focus-x, 50%);
+  --_focus-y: var(--hero-focus-y, 32%);
+  --_zoom: var(--hero-zoom, 1.12);
+  --_scrim-start: var(--hero-scrim-start, 44%);
+  --_scrim-end: var(--hero-scrim-end, 56%);
+  --_text-width: var(--hero-text-width, 44%);
+  --_bottom-fade: 10px;   /* thin soft edge along the photo's bottom */
+
+  /* Direction tokens -- flipped by .hero-band--flip below. */
+  --_scrim-dir: to right;          /* scrim fills the text side */
+  --_panel-mask-dir: to right;     /* ::before feather direction */
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+
+  /* Full-bleed: band edge == viewport edge. */
+  margin-inline: calc(50% - 50vw);
+  margin-block: 3rem;
+
+  /* Bounded PREFERRED height (predictable, zero CLS) -- a floor, not a
+     cap: if the content is taller than this on a narrow desktop, the band
+     grows to fit instead of clipping it. */
+  min-height: clamp(var(--_h-min), var(--_h), var(--_h-max));
+  overflow: hidden;
+}
+
+/* The About band sits flush under the sticky navbar (cancels RootLayout's
+   .py-4 top padding); other bands keep normal spacing. */
+#about.hero-band {
+  margin-top: -1.5rem;
+}
+
+/* Layer 0: the photo. background-image comes from an inline style. */
+.hero-band__img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+
+  background-repeat: no-repeat;
+  background-size: var(--_bg-size);
+  background-position: var(--_focus-x) var(--_focus-y);
+
+  transform: scale(var(--_zoom));
+  transform-origin: var(--_focus-x) var(--_focus-y);
+
+  /* Thin fade-out along the bottom edge so the photo doesn't end on a hard line. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--_bottom-fade)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--_bottom-fade)), transparent);
+}
+
+/* Layer 1: page-background scrim over the text side. Opaque past
+   --_scrim-end, which Home.tsx caps to the text column's inner edge, so
+   the text can never sit on the photo. */
+.hero-band__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    var(--_scrim-dir),
+    transparent 0%,
+    transparent var(--_scrim-start),
+    var(--bs-body-bg, #fff) var(--_scrim-end)
+  );
+}
+
+/* Layer 2: the text, kept to the page width and pushed to one side.
+   In normal flow (not absolute) so it DRIVES the band height. */
+.hero-band__inner {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+}
+
+.hero-band__text {
+  position: relative;
+  width: var(--_text-width);
+  max-width: 40rem;      /* rem so it grows with the 4K root-font bump */
+  margin-left: auto;     /* -> right side (flipped below) */
+  padding-right: 1rem;
+}
+
+/* Hard guarantee: a solid page-background panel directly behind the text
+   with a short feathered lead-in on the photo-facing side. Independent of
+   the scrim and of the viewport/container ratio, so the text is ALWAYS on
+   a clean background. */
+.hero-band__text::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  left: -2.5rem;
+  z-index: -1;
+  background: var(--bs-body-bg, #fff);
+  -webkit-mask-image: linear-gradient(var(--_panel-mask-dir), transparent 0, #000 2.5rem);
+  mask-image: linear-gradient(var(--_panel-mask-dir), transparent 0, #000 2.5rem);
+}
+
+/* ---- Mirror: photo on the RIGHT, text on the LEFT ------------------- */
+.hero-band--flip {
+  --_scrim-dir: to left;
+  --_panel-mask-dir: to left;
+}
+.hero-band--flip .hero-band__text {
+  margin-left: 0;
+  margin-right: auto;
+  padding-right: 0;
+  padding-left: 1rem;
+}
+.hero-band--flip .hero-band__text::before {
+  left: auto;
+  right: -2.5rem;
+}
+
+/* --- 900-991px: use the exact >=992 side-by-side layout ------------- */
+/* Bootstrap's `.container` is only 720px wide here (md tier), which
+   squeezes the text column onto the photo. Pin the inner to 960px
+   (Bootstrap's lg width) so 900-1199 all render identically. */
+@media (min-width: 900px) and (max-width: 991.98px) {
+  .hero-band__inner {
+    max-width: 960px;
+  }
+}
+
+/* --- Narrow screens ------------------------------------------------- */
+/* Below this width the side-by-side overlay is too cramped, so stack:
+   the photo becomes a faint full-width backdrop and the text runs
+   across it. */
+@media (max-width: 899.98px) {
+  .hero-band {
+    min-height: 0;
+    margin-bottom: 2rem;
+  }
+  #about.hero-band {
+    margin-top: -1.5rem;
+  }
+
+  .hero-band__img {
+    opacity: 0.16;
+    transform: none;
+    /* `cover` (not `auto 100%`) so the faint backdrop always fills the band
+       whatever the image's aspect ratio or the band's (content-driven)
+       height -- otherwise a shorter section / squarer image leaves gaps. */
+    background-size: cover;
+    background-position: var(--hero-mobile-focus-x, 30%) center;
+  }
+  .hero-band--flip .hero-band__img {
+    background-position: calc(100% - var(--hero-mobile-focus-x, 30%)) center;
+  }
+
+  .hero-band__scrim {
+    display: none;
+  }
+
+  .hero-band__text::before {
+    display: none;
+  }
+
+  .hero-band__text {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 2rem 1rem;
+  }
+}
+
+/* --- Very narrow screens (phones) --------------------------------- */
+@media (max-width: 480px) {
+  .hero-band__img {
+    background-size: cover;
+    background-position: var(--hero-tiny-focus-x, 20%) center;
+  }
+  .hero-band--flip .hero-band__img {
+    background-position: calc(100% - var(--hero-tiny-focus-x, 20%)) center;
+  }
+}
+
+/* ===================================================================
+   Journey timeline
+
+   Central vertical line; cards alternate left / right down the line,
+   each inside an elongated hexagon; a connector dot on the line per
+   card; the LAST card ("Now") is centred at the bottom end of the line.
+   Layout is nth-child / --now based -> works for any number of items.
+   =================================================================== */
+.jtl {
+  --jtl-line: 6px;                 /* line thickness */
+  --jtl-gap: 4rem;                 /* space between the two columns (holds the line) */
+  --jtl-pad: 1.25rem;              /* vertical padding per row */
+  --jtl-point: 26px;              /* hexagon side-point depth */
+  --jtl-accent: var(--bs-primary, #0d6efd);
+  --jtl-card-bg: var(--bs-body-bg, #fff);
+  --jtl-rule: var(--bs-border-color, #dee2e6);
+  --jtl-clip: polygon(
+    var(--jtl-point) 0, calc(100% - var(--jtl-point)) 0,
+    100% 50%,
+    calc(100% - var(--jtl-point)) 100%, var(--jtl-point) 100%,
+    0 50%
+  );
+
+  list-style: none;
+  position: relative;
+  margin: 0;
+  padding: 0;
+}
+
+/* the vertical line */
+.jtl::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: var(--jtl-line);
+  border-radius: var(--jtl-line);
+  background: var(--jtl-rule);
+  transform: translateX(-50%);
+}
+
+/* one row */
+.jtl__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* `dense` lets an even row's image (grid-column 1) backfill row 1 next
+     to its right-hand card; without it the image drops to row 2 (appears
+     stacked below the card). For the single-column "now" row it still
+     falls to row 2 = below the card, which is what we want there. */
+  grid-auto-flow: row dense;
+  column-gap: var(--jtl-gap);
+  align-items: center;
+  padding-block: var(--jtl-pad);
+}
+
+/* which column the card lands in */
+.jtl__item:nth-child(odd)  .jtl__card { grid-column: 1; justify-self: end; }
+.jtl__item:nth-child(even) .jtl__card { grid-column: 2; justify-self: start; }
+
+/* short arm from the line out to the card */
+.jtl__item::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  height: 3px;
+  width: calc(var(--jtl-gap) / 2);
+  background: var(--jtl-rule);
+  transform: translateY(-50%);
+}
+.jtl__item:nth-child(odd)::after  { right: 50%; }
+.jtl__item:nth-child(even)::after { left: 50%; }
+
+/* dot on the line, centred on the card */
+.jtl__dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--jtl-accent);
+  box-shadow: 0 0 0 4px var(--jtl-card-bg);   /* punches through the line */
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+/* elongated hexagon: outer element = border, inner = fill */
+.jtl__card {
+  width: 100%;
+  max-width: 30rem;
+  padding: 2px;                    /* becomes the hexagon's rim */
+  background: var(--jtl-rule);
+  clip-path: var(--jtl-clip);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.12));
+}
+.jtl__card-inner {
+  position: relative;
+  background: var(--jtl-card-bg);
+  clip-path: var(--jtl-clip);
+  padding: 1.25rem clamp(2rem, 6%, 3.25rem);
+}
+
+/* clickable card (block has a site_journey detail sheet): strip the native
+   <button> chrome so it looks identical to the plain card, then add a lift
+   on hover / focus. The rim (.jtl__card background) turns accent on
+   focus-visible -- an unclipped focus indicator (clip-path would eat an
+   outline). */
+.jtl__card--btn {
+  display: block;
+  width: 100%;
+  border: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.jtl__card--btn:hover,
+.jtl__card--btn:focus-visible {
+  transform: translateY(-2px);
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.18));
+  outline: none;
+}
+.jtl__card--btn:focus-visible { background: var(--jtl-accent); }
+
+/* "Read more ->" affordance inside a clickable card, aligned to the right */
+.jtl__more {
+  display: block;
+  margin-top: 0.6rem;
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--jtl-accent);
+}
+
+.jtl__year { margin: 0 0 0.15rem; font-weight: 700; font-size: 0.85rem; color: var(--jtl-accent); }
+.jtl__title { margin: 0 0 0.4rem; }
+.jtl .lead { font-size: 1rem; font-weight: 400; margin-bottom: 0; }
+.jtl .lead + .lead { margin-top: 0.5rem; }
+
+.jtl__badge {
+  display: inline-block;
+  margin-bottom: 0.4rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: var(--jtl-accent);
+}
+
+/* optional per-block image: a plain rectangle in the OTHER column from
+   the card, edges softly faded into the page. Only rendered when the
+   block has an image (.jtl__item--has-img). */
+.jtl__media {
+  width: 100%;
+  max-width: var(--jtl-media-w, 32rem);
+  align-self: center;   /* vertically centred against the card */
+}
+.jtl__media img {
+  display: block;
+  width: 100%;
+  height: var(--jtl-media-h, 18rem);   /* fixed -> every image the same size.
+                                          --jtl-media-w / --jtl-media-h are
+                                          the size knobs. */
+  object-fit: cover;
+
+  /* plain rectangle whose edges feather out a little: two inset gradients
+     (H + V) intersected. `--jtl-fade` = how far in the fade reaches from
+     each edge -- smaller = subtler. */
+  --jtl-fade: 9%;
+  -webkit-mask-image:
+    linear-gradient(to right,  transparent, #000 var(--jtl-fade), #000 calc(100% - var(--jtl-fade)), transparent),
+    linear-gradient(to bottom, transparent, #000 var(--jtl-fade), #000 calc(100% - var(--jtl-fade)), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right,  transparent, #000 var(--jtl-fade), #000 calc(100% - var(--jtl-fade)), transparent),
+    linear-gradient(to bottom, transparent, #000 var(--jtl-fade), #000 calc(100% - var(--jtl-fade)), transparent);
+  mask-composite: intersect;
+}
+/* :nth-child() to match the card's odd/even specificity */
+.jtl__item:nth-child(odd)  .jtl__media { grid-column: 2; justify-self: start; }
+.jtl__item:nth-child(even) .jtl__media { grid-column: 1; justify-self: end; }
+
+/* last row: the current node, centred at the end of the line */
+.jtl__item--now {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding-bottom: 0;
+}
+.jtl__item--now::after { display: none; }         /* no side arm */
+.jtl__item--now .jtl__dot { display: none; }      /* the card itself marks "here" */
+/* :nth-child() keeps specificity level with the odd/even card rules above
+   so this wins regardless of whether the last item is odd or even. */
+.jtl__item--now:nth-child(odd)  .jtl__card,
+.jtl__item--now:nth-child(even) .jtl__card {
+  grid-column: 1;
+  justify-self: center;
+  position: relative;
+  z-index: 3;                                     /* opaque: hides the line's tail */
+  padding: 4px;                                   /* thicker rim */
+  background: var(--jtl-accent);                  /* accent-coloured rim */
+}
+/* current node's image (if any) stacks under the centred card */
+.jtl__item--now:nth-child(odd)  .jtl__media,
+.jtl__item--now:nth-child(even) .jtl__media {
+  grid-column: 1;
+  justify-self: center;
+  margin-top: 1rem;
+}
+
+/* --- single column below lg: line on the left, all cards to its right - */
+@media (max-width: 991.98px) {
+  .jtl {
+    --rail: 1.5rem;               /* line x-position from the left */
+    --arm: 1.5rem;                /* rail -> card connector length */
+  }
+
+  .jtl::before { left: var(--rail); transform: none; }
+
+  /* every row: one column, card stretched to the right of the rail */
+  .jtl__item,
+  .jtl__item--now {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+    justify-items: stretch;
+    padding-left: calc(var(--rail) + var(--arm));
+    padding-block: var(--jtl-pad);
+  }
+  .jtl__item:nth-child(odd)  .jtl__card,
+  .jtl__item:nth-child(even) .jtl__card,
+  .jtl__item--now:nth-child(odd)  .jtl__card,
+  .jtl__item--now:nth-child(even) .jtl__card {
+    grid-column: 1;
+    justify-self: stretch;
+    max-width: none;
+  }
+  /* image stacks below the card, same column */
+  .jtl__item:nth-child(odd)  .jtl__media,
+  .jtl__item:nth-child(even) .jtl__media,
+  .jtl__item--now:nth-child(odd)  .jtl__media,
+  .jtl__item--now:nth-child(even) .jtl__media {
+    grid-column: 1;
+    justify-self: stretch;
+    max-width: none;
+    margin-top: 0.75rem;
+  }
+  /* keep the current node's image aligned with its left-shifted card */
+  .jtl__item--now:nth-child(odd)  .jtl__media,
+  .jtl__item--now:nth-child(even) .jtl__media {
+    margin-left: calc(-1 * var(--now-shift));
+  }
+
+  /* connector arm + dot: rail -> the hexagon's left point, at mid-height.
+     :nth-child() keeps specificity level with the odd/even ::after rules. */
+  .jtl__item:nth-child(odd)::after,
+  .jtl__item:nth-child(even)::after {
+    display: block;
+    left: var(--rail);
+    right: auto;
+    width: var(--arm);
+    top: 50%;
+  }
+  .jtl__dot {
+    display: block;
+    left: var(--rail);
+    top: 50%;
+  }
+
+  /* last ("now") row: NOT aligned with the others -- shifted left so the
+     hexagon sits over the rail. No bent arm: the line runs straight down
+     into the hex and stops at its top edge. `--now-shift` = how far the
+     card overhangs left of the rail (raise it to push further left; the
+     section's 1rem gutter is the practical limit before the viewport edge). */
+  .jtl__item--now {
+    position: relative;
+    --now-shift: 1rem;
+    padding-left: 0;
+  }
+  .jtl__item--now:nth-child(odd)  .jtl__card,
+  .jtl__item--now:nth-child(even) .jtl__card {
+    margin-left: calc(-1 * var(--now-shift));
+  }
+  .jtl__item--now .jtl__dot { display: none; }
+  .jtl__item--now:nth-child(odd)::after,
+  .jtl__item--now:nth-child(even)::after {   /* no arm */
+    display: none;
+  }
+  .jtl__item--now::before {                  /* stop the rail line at the hex top */
+    content: "";
+    position: absolute;
+    left: 0;
+    width: calc(var(--rail) + var(--jtl-line));
+    top: var(--jtl-pad);
+    bottom: 0;
+    background: var(--jtl-card-bg);
+  }
+}
+
+/* ===================================================================
+   Journey detail sheet (bottom pop-up)
+
+   Self-contained: a fixed full-screen layer portalled to <body>, a dimmed
+   backdrop, and a panel that slides up from the bottom edge. `.jsheet--open`
+   toggles both. The panel is centred with a gutter on each side, capped at
+   4/5 of the viewport height, and scrolls internally when the content is
+   taller than that.
+   =================================================================== */
+.jsheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1045;                 /* above the sticky navbar (1020) */
+  visibility: hidden;
+  pointer-events: none;
+}
+.jsheet--open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.jsheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.jsheet--open .jsheet__backdrop {
+  opacity: 1;
+}
+
+.jsheet__panel {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  /* narrower than the viewport, leaving a gutter on each side (>= 2rem on
+     small screens), capped at a comfortable reading width */
+  width: min(64rem, calc(100% - 4rem));
+  /* never taller than 4/5 of the screen; longer content scrolls inside */
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  /* visible (not hidden) so the corner close button can straddle the edge;
+     the rounded top corners still clip the panel's own background. */
+  overflow: visible;
+  background: var(--bs-body-bg, #fff);
+  border-radius: var(--sheet-radius, 1rem) var(--sheet-radius, 1rem) 0 0;
+  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.25);
+  /* translateX centres it; translateY drives the slide-up */
+  transform: translate(-50%, 100%);
+  transition: transform 0.3s ease;
+}
+.jsheet--open .jsheet__panel {
+  transform: translate(-50%, 0);
+}
+.jsheet__panel:focus {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jsheet__backdrop,
+  .jsheet__panel {
+    transition: none;
+  }
+}
+
+/* fixed strip holding the drag-grip; the close button (a sibling) straddles
+   the panel corner above it */
+.jsheet__bar {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem 0.4rem;
+}
+/* the actual scroll area -- everything past 80vh scrolls in here */
+.jsheet__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem clamp(1rem, 5vw, 3rem) 2.5rem;
+}
+
+.jsheet__grip {
+  display: block;
+  width: 2.5rem;
+  height: 0.25rem;
+  margin: 0 auto;
+  border-radius: 1rem;
+  background: var(--bs-border-color, #dee2e6);
+}
+.jsheet__head {
+  margin-bottom: 1rem;
+}
+.jsheet__year {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--bs-primary, #0d6efd);
+}
+.jsheet__body .lead {
+  font-size: 1.05rem;
+  font-weight: 400;
+}
+
+/* ---- shared close button -------------------------------------------
+   Circular ✕ used by BOTH the journey and project pop-ups. It's an
+   absolutely-positioned direct child of the panel; its centroid sits on
+   the 45° point of the panel's top-right rounded corner (0.293r in from
+   the square corner on each axis) so half the circle is over the sheet
+   and half over the backdrop. Below 900px it tucks fully inside so it
+   can't clip against the viewport edge. */
+.sheet-close {
+  position: absolute;
+  top: calc(var(--sheet-radius, 1rem) * 0.2929);
+  right: calc(var(--sheet-radius, 1rem) * 0.2929);
+  transform: translate(50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sheet-close-size, 2.5rem);
+  height: var(--sheet-close-size, 2.5rem);
+  padding: 0;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 50%;
+  background: var(--bs-body-bg, #fff);
+  color: var(--bs-body-color, #212529);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  z-index: 3;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+.sheet-close::before {
+  content: "\2715";   /* ✕ */
+  font-size: calc(var(--sheet-close-size, 2.5rem) * 0.44);
+  line-height: 1;
+}
+.sheet-close:hover {
+  background: var(--bs-secondary-bg, #e9ecef);
+  transform: translate(50%, -50%) scale(1.06);
+}
+.sheet-close:focus-visible {
+  outline: 2px solid var(--bs-primary, #0d6efd);
+  outline-offset: 2px;
+}
+@media (max-width: 899.98px) {
+  .sheet-close {
+    top: 0.55rem;
+    right: 0.55rem;
+    transform: none;
+  }
+  .sheet-close:hover {
+    transform: scale(1.06);
+  }
+}
+
+/* ===================================================================
+   Projects banner
+
+   A horizontal, scrollable strip of project thumbnails between the
+   Certifications and Journey sections. A thumbnail with a site_project
+   row is a <button> that opens the ProjectSheet pop-up; one without is a
+   plain <div>. Scales to any number of items -- it just scrolls.
+   =================================================================== */
+.proj-scroller {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0 1rem;   /* room for the scrollbar below the cards */
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.proj-scroller__item {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.proj-card {
+  display: flex;
+  flex-direction: column;
+  width: clamp(15rem, 60vw, 22rem);
+  color: inherit;
+  text-align: inherit;
+}
+/* button reset, so a clickable card looks identical to a plain one */
+.proj-card--btn {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+.proj-card__img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 0.75rem;
+  background: var(--bs-tertiary-bg, #f2f2f2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.proj-card__img--empty {
+  aspect-ratio: 16 / 10;
+}
+.proj-card__label {
+  margin-top: 0.6rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;   /* centred under the thumbnail */
+}
+/* interactivity only on the clickable variant */
+.proj-card--btn:hover .proj-card__img,
+.proj-card--btn:focus-visible .proj-card__img {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+}
+.proj-card--btn:focus-visible {
+  outline: none;
+}
+.proj-card--btn:focus-visible .proj-card__img {
+  outline: 2px solid var(--bs-primary, #0d6efd);
+  outline-offset: 2px;
+}
+.proj-card--btn:hover .proj-card__label {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proj-card__img {
+    transition: none;
+  }
+}
+
+/* ===================================================================
+   Project detail sheet (bottom pop-up)
+
+   Reuses the .jsheet layer + backdrop + slide from the journey sheet.
+   The panel is a flex column: a fixed bar (grip + close) over a single
+   scroll area laid out as two columns -- a STICKY write-up on the left,
+   a scrolling stack of feature-demo videos on the right.
+   =================================================================== */
+
+/* ---- size knobs -- tune these; the rest of .psheet is layout --------
+   --psheet-max-width   : cap on the panel width on wide screens
+   --psheet-side-gap    : min gutter kept on EACH side (wide screens)
+   --psheet-side-gap-sm : ditto, below 900px
+   --psheet-max-height  : cap on panel height (content scrolls past it)
+   --psheet-text-col   : width of the left text column (the videos take the
+                         rest); raise it to give the write-up more room
+   --sheet-radius       : sheet top-corner radius -- shared by BOTH the
+                          journey and project pop-ups; also anchors the
+                          circular corner close button (.sheet-close)
+   --sheet-close-size   : diameter of that close button */
+:root {
+  --psheet-max-width: 86rem;
+  --psheet-side-gap: 1.5rem;
+  --psheet-side-gap-sm: 0.80rem;
+  --psheet-max-height: 90vh;
+  --psheet-text-col: 34rem;
+  --sheet-radius: 1rem;
+  --sheet-close-size: 2.5rem;
+}
+
+.psheet__panel {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(
+    var(--psheet-max-width, 72rem),
+    calc(100% - 2 * var(--psheet-side-gap, 1.5rem))
+  );
+  max-height: var(--psheet-max-height, 85vh);
+  /* query container: the grid below stacks based on THIS width, not the
+     viewport, so it collapses whenever the video column would get narrower
+     than the text column (see @container rule) */
+  container: psheet / inline-size;
+  display: flex;
+  flex-direction: column;
+  /* visible (not hidden) so the corner close button can straddle the edge;
+     the rounded top corners still clip the panel's own background. */
+  overflow: visible;
+  background: var(--bs-body-bg, #fff);
+  border-radius: var(--sheet-radius, 1rem) var(--sheet-radius, 1rem) 0 0;
+  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.25);
+  transform: translate(-50%, 100%);
+  transition: transform 0.3s ease;
+}
+.jsheet--open .psheet__panel {
+  transform: translate(-50%, 0);
+}
+.psheet__panel:focus {
+  outline: none;
+}
+
+.psheet__bar {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem 0.4rem;
+}
+
+.psheet__grid {
+  flex: 1 1 auto;
+  min-height: 0;   /* flex child: scroll inside the panel, don't stretch it */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  grid-template-columns: minmax(20rem, 25rem) 1fr;
+  gap: 2.5rem;
+  padding: 0.5rem clamp(1rem, 4vw, 2.5rem) 2.5rem;
+}
+.psheet__aside {
+  position: sticky;
+  top: 0.5rem;
+  align-self: start;
+}
+
+/* Stack (text on top, videos below) once the panel gets narrow. Measured on
+   PANEL width, not viewport, so it holds regardless of --psheet-max-width or
+   how the panel is placed. 64.5rem panel ~= 1080px viewport (panel is
+   viewport minus the 2x1.5rem side gutters); raise it to collapse sooner. */
+@container psheet (max-width: 64.5rem) {
+  .psheet__grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .psheet__aside {
+    position: static;
+  }
+}
+.psheet__h {
+  margin: 1.4rem 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color, #6c757d);
+}
+.psheet__aside .lead {
+  font-size: 1rem;
+  margin-bottom: 0;
+}
+.psheet__list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.psheet__list li {
+  margin-bottom: 0.35rem;
+}
+.psheet__tech {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.psheet__tech li {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.15rem 0.6rem;
+  border-radius: 1rem;
+  background: var(--bs-tertiary-bg, #f0f0f0);
+}
+.psheet__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+.psheet__media {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  min-width: 0;
+}
+.psheet__video {
+  margin: 0;
+}
+.psheet__video video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 0.75rem;
+  background: #000;
+  pointer-events: none;   /* can't pause / scrub / right-click -- the "inline media" pattern */
+}
+.psheet__video figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--bs-secondary-color, #666);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .psheet__panel {
+    transition: none;
+  }
+}
+
+@media (max-width: 899.98px) {
+  .psheet__panel {
+    width: calc(100% - 2 * var(--psheet-side-gap-sm, 0.75rem));
+  }
+  .psheet__grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .psheet__aside {
+    position: static;
+  }
+}

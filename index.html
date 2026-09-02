@@ -5,6 +5,25 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>persona_stand_front</title>
+
+    <!-- The About hero image is the first thing every visitor sees, but it's
+         a CSS background set only after the JS bundle loads and
+         /api/site-content resolves -- so its download would otherwise start
+         late. Warm the CloudFront connection and start the one above-the-fold
+         image in parallel with the bundle. Keep the URL in sync with the
+         site_image ('personal_statement', 'hero') key and assetUrl.ts's
+         CDN_BASE; a stale URL just wastes one request, it doesn't break. -->
+    <!-- %VITE_CDN_BASE% is substituted by Vite from the frontend .env at
+         build time (same value assetUrl.ts uses). It must have NO trailing
+         slash. No `crossorigin`: a CSS background-image is fetched without
+         CORS, so the preload must match that or the browser fetches twice. -->
+    <link rel="preconnect" href="%VITE_CDN_BASE%" />
+    <link
+      rel="preload"
+      as="image"
+      href="%VITE_CDN_BASE%/about_me/main_img.png"
+      fetchpriority="high"
+    />
   </head>
   <body>
     <div id="root"></div>
