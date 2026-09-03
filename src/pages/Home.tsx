@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router-dom';
 import Nav from 'react-bootstrap/Nav';
 import { useSiteContent, pickImage } from '../hooks/useSiteContent';
 import { useMediaPrefetch } from '../hooks/useMediaPrefetch';
+import { useDragScroll } from '../hooks/useDragScroll';
 import { useActiveSection } from '../context/ActiveSectionContext';
 import { assetUrl } from '../lib/assetUrl';
 import Prose from '../components/Prose';
+import ProjectDots from '../components/ProjectDots';
 import ProjectSheet, { type ProjectSheetData } from './ProjectSheet';
 import githubIcon from '../assets/icons/github.png';
 import linkedinIcon from '../assets/icons/linkin.png';
@@ -18,6 +20,7 @@ import {
   CERT_HERO_DEFAULTS,
   heroVars,
   ANCHOR_OFFSET,
+  HERO_ANCHOR_OFFSET,
   SCROLLSPY_LINE,
 } from '../lib/knobs';
 import './Home.css';
@@ -92,6 +95,8 @@ interface JourneyBlock {
   id: string;
   year: string;
   title: string;
+  institution?: string;  // optional: the school / company / organisation --
+                         // shown in italics under the title.
   body: string;
   image_tag?: string;   // optional: names a site_image row -- section
                         // "journey", description == this value. Its
@@ -181,6 +186,13 @@ function JourneySheet({
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // The panel stays mounted between blocks, so .jsheet__scroll keeps the
+  // previous block's scroll position -- snap it back to the top on open.
+  useLayoutEffect(() => {
+    if (open && scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -221,7 +233,7 @@ function JourneySheet({
         <div className="jsheet__bar">
           <span className="jsheet__grip" aria-hidden="true" />
         </div>
-        <div className="jsheet__scroll">
+        <div className="jsheet__scroll" ref={scrollRef}>
           <div className="jsheet__head">
             {block?.year && <span className="jsheet__year">{block.year}</span>}
             <h2 id="jsheet-title" className="h4 mb-0">{title}</h2>
@@ -290,6 +302,45 @@ export default function Home() {
   // (video S3 keys turned into URLs); `projectSheetOpen` drives the slide.
   const [projectSheet, setProjectSheet] = useState<ProjectSheetData | null>(null);
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
+
+  // Trailing-spacer sizing. Contact is the last section and usually short,
+  // so on its own the page can't scroll far enough to bring "Contact Me" up
+  // to the anchor line. Rather than a flat 100vh spacer (which left a
+  // screenful of dead scroll once Contact reached the top), size the spacer
+  // to exactly the shortfall: pad the content below Contact's top up to --
+  // but not past -- one viewport minus the anchor offset, so Contact can
+  // just reach the top with no leftover scroll. Recomputed on resize and
+  // whenever the layout changes (ResizeObserver on <body>); the >1px guard
+  // stops the observer's own feedback loop.
+  const tailRef = useRef<HTMLDivElement>(null);
+
+  // The horizontal projects scroller -- read by <ProjectDots> to work out
+  // which project thumbnails are on screen, and made click-drag pannable so
+  // its scrollbar can be hidden.
+  const projScrollerRef = useRef<HTMLUListElement>(null);
+
+  useLayoutEffect(() => {
+    const el = tailRef.current;
+    if (!el) return;
+    const fit = () => {
+      const contact = document.getElementById('contact');
+      if (!contact) return;
+      const anchor = parseFloat(getComputedStyle(contact).scrollMarginTop) || 0;
+      const contactTop = contact.getBoundingClientRect().top + window.scrollY;
+      const spacerNow = el.offsetHeight;
+      const contentBelow = document.documentElement.scrollHeight - contactTop - spacerNow;
+      const needed = Math.max(0, window.innerHeight - anchor - contentBelow);
+      if (Math.abs(needed - spacerNow) > 1) el.style.height = `${needed}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    const ro = new ResizeObserver(fit);
+    ro.observe(document.body);
+    return () => {
+      window.removeEventListener('resize', fit);
+      ro.disconnect();
+    };
+  }, [loading, content]);
 
   // Scroll to the section named in the URL hash (e.g. /#journey) on first
   // load and whenever the hash changes. Re-run once content finishes
@@ -362,6 +413,9 @@ export default function Home() {
   const certCfg: HeroConfig = { ...CERT_HERO_DEFAULTS, ...statement.certHero };
 
   const projectItems = (Array.isArray(content.projects) ? content.projects : []) as Project[];
+  // Click-drag panning for the projects scroller (mouse only) -- pass the
+  // count so the hook re-attaches once the scroller has actually rendered.
+  useDragScroll(projScrollerRef, projectItems.length);
   // Expanded copy per project, keyed by project id (site_project table). A
   // thumbnail with an entry here is clickable and opens the bottom sheet.
   const projectDetailMap = projectDetails as Record<string, ProjectDetail | undefined>;
@@ -428,7 +482,9 @@ export default function Home() {
     <>
       {statement.heading && <h2 className="mb-3">{statement.heading}</h2>}
       <Prose text={statement.body} />
-      <div className="mt-4">
+      {/* CTA: centred on phones (< sm), left-aligned from sm up. The .btn is
+          inline-block, so text-align on this wrapper positions it. */}
+      <div className="mt-4 text-center text-sm-start">
         <button className="btn btn-primary btn-lg px-4 shadow-sm">
           <Nav.Link as={NavLink} to={ctaHref}>{ctaLabel}</Nav.Link>
         </button>
@@ -500,7 +556,7 @@ export default function Home() {
           id="about"
           imageSrc={heroSrc}
           cfg={aboutCfg}
-          anchorStyle={ANCHOR_OFFSET}
+          anchorStyle={HERO_ANCHOR_OFFSET}
           ariaLabel={statement.heading ?? 'Portrait'}
         >
           {aboutText}
@@ -532,7 +588,7 @@ export default function Home() {
           imageSrc={qualImg}
           cfg={qualCfg}
           flip
-          anchorStyle={ANCHOR_OFFSET}
+          anchorStyle={HERO_ANCHOR_OFFSET}
           ariaLabel="Qualifications & Awards"
         >
           {qualContent}
@@ -549,7 +605,7 @@ export default function Home() {
           id="certifications"
           imageSrc={certImg}
           cfg={certCfg}
-          anchorStyle={ANCHOR_OFFSET}
+          anchorStyle={HERO_ANCHOR_OFFSET}
           ariaLabel="Certifications"
         >
           {certContent}
@@ -570,7 +626,7 @@ export default function Home() {
         )}
 
         {projectItems.length > 0 && (
-          <ul className="proj-scroller" role="list">
+          <ul className="proj-scroller" role="list" ref={projScrollerRef}>
             {projectItems.map(p => {
               // Thumbnail URL is always resolved from the site_image table
               // (section "projects", description == image_tag or id).
@@ -607,6 +663,10 @@ export default function Home() {
             })}
           </ul>
         )}
+
+        {projectItems.length > 1 && (
+          <ProjectDots count={projectItems.length} scrollerRef={projScrollerRef} />
+        )}
       </section>
 
       {/* ===== Journey ===== */}
@@ -640,6 +700,7 @@ export default function Home() {
                   {isNow && <span className="jtl__badge">Now</span>}
                   <p className="jtl__year">{block.year}</p>
                   <h3 className="jtl__title h5">{block.title}</h3>
+                  {block.institution && <p className="jtl__org">{block.institution}</p>}
                   <Prose text={block.body} />
                   {hasDetail && (
                     <span className="jtl__more" aria-hidden="true">Read more →</span>
@@ -740,6 +801,11 @@ export default function Home() {
           <p className="text-muted">No contact content yet.</p>
         )}
       </section>
+
+      {/* Trailing spacer -- height is set by the useLayoutEffect above so
+          "Contact Me" can scroll exactly to the anchor line with no extra
+          dead scroll after it. */}
+      <div className="section-tail" aria-hidden="true" ref={tailRef} />
 
       <JourneySheet
         open={sheetOpen}

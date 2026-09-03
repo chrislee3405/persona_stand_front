@@ -4,8 +4,12 @@ import { useChat } from '../context/ChatContext';
 import { useConsent } from '../hooks/useConsent';
 import { useInviteCode } from '../hooks/useInviteCode';
 import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
+import { assetUrl } from '../lib/assetUrl';
 import wallpaper from '../assets/icons/chatroom_wallpaper.png';
 import './Chatroom.css';
+
+// Header avatar -- a fixed object in the CDN bucket (not a site_image row).
+const AVATAR_URL = assetUrl('about_me/icon.png');
 
 // Shown only if the GET /api/consent response has no conditionText at all
 // (e.g. consent_policy is somehow empty) -- should be rare in practice
@@ -22,8 +26,9 @@ export default function Chatroom() {
   const { code, inputCode, setInputCode, isVerified, isVerifyingCode, verifyCode } = useInviteCode();
 
   // Consent gate: whether the user has agreed, the policy text for the popup,
-  // the submitting flag, and agree/revoke actions.
-  const { consented, consentText, isSubmittingConsent, agreeConsent, revokeConsent } = useConsent();
+  // the submitting flag, agree/revoke actions, and whether the mount-time
+  // consent check couldn't reach the backend.
+  const { consented, consentText, isSubmittingConsent, agreeConsent, revokeConsent, checkFailed } = useConsent();
 
   // The terms popup is now dismissible: "I Don't Agree" sets this, which hides
   // the overlay and lets the visitor read the chatroom. It stays hidden until
@@ -44,11 +49,19 @@ export default function Chatroom() {
   // change handler, the send handler (rapid-fire fragment batching lives in
   // here), the warning-banner text, and the ids of bubbles the backend
   // refused (rendered as red dialog boxes below).
-  const { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, isAwaitingReply } = useChatDispatch({
+  const { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, isAwaitingReply, isOffline } = useChatDispatch({
     consented,
     isVerified,
     onConsentRequired: requireConsent,
   });
+
+  // Header status. Once a send has resolved, its outcome (isOffline) is the
+  // source of truth; before any send, fall back to whether the consent
+  // check reached the backend.
+  const offline = isOffline === true || (isOffline === null && checkFailed);
+
+  // Falls back to a monogram if the CDN avatar is missing / not public.
+  const [avatarBroken, setAvatarBroken] = useState(false);
 
   // Auto-stick to the bottom as new bubbles (and the notice) arrive.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -135,10 +148,24 @@ export default function Chatroom() {
       )}
 
       <header className="chatroom__header">
-        <span className="chatroom__avatar" aria-hidden="true">P</span>
+        {AVATAR_URL && !avatarBroken ? (
+          <img
+            className="chatroom__avatar"
+            src={AVATAR_URL}
+            alt=""
+            aria-hidden="true"
+            onError={() => setAvatarBroken(true)}
+          />
+        ) : (
+          <span className="chatroom__avatar" aria-hidden="true">P</span>
+        )}
         <div>
           <div className="chatroom__title">Virtual Persona</div>
-          <div className="chatroom__status">online</div>
+          <div
+            className={`chatroom__status${offline && !isAwaitingReply ? ' chatroom__status--offline' : ''}`}
+          >
+            {isAwaitingReply ? 'Typing…' : offline ? 'offline' : 'online'}
+          </div>
         </div>
       </header>
 

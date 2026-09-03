@@ -173,6 +173,11 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
   // fragment. A counter, not a boolean, so overlapping waits from
   // rapid-fire sends don't cancel each other out.
   const [typingCount, setTypingCount] = useState(0);
+  // Backend reachability, as of the last send: null = nothing sent yet,
+  // false = the backend answered (even to reject), true = the request
+  // failed at the transport level or came back 5xx. Chatroom shows this as
+  // the "online" / "offline" header status.
+  const [isOffline, setIsOffline] = useState<boolean | null>(null);
   // Shared banner text for both the pending-message cap and the
   // message-too-long check below -- null hides the banner.
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
@@ -265,6 +270,12 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
         setInputCode('');
         response = await postChat('/api/guestchat');
       }
+
+      // We got an HTTP response back. A 5xx means the backend is down or
+      // erroring behind the proxy; any other status means it's up and
+      // answering (even a 4xx rejection). The `catch` below covers a
+      // request that never got a response at all.
+      setIsOffline(response.status >= 500);
 
       if (response.status === 403) {
         // Rare fallback (e.g. the session's consent record was cleared
@@ -378,6 +389,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // or a malformed 200 response -- every handled HTTP status returns
       // above with its own specific message.
       console.error("Chat request failed:", error);
+      setIsOffline(true);
       const errorMessage = createMessage(
         "Couldn't reach the server. Check your connection and try again.",
         'system'
@@ -493,5 +505,5 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
     if (isHoldingRef.current) scheduleHoldFlush(TYPING_IDLE_MS);
   };
 
-  return { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, isAwaitingReply: typingCount > 0 };
+  return { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, isAwaitingReply: typingCount > 0, isOffline };
 }

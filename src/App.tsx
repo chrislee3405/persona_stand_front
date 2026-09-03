@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Outlet, Navigate } from 'react-rou
 
 import Navbar from './components/navbar.tsx'
 import Footer from './components/footer.tsx'
+import ScrollToTop from './components/ScrollToTop.tsx'
 
 import { ChatProvider } from './context/ChatContext.tsx'
 import { ActiveSectionProvider } from './context/ActiveSectionContext.tsx'
@@ -44,6 +45,7 @@ const router = createBrowserRouter([
 function RootLayout() {
   return (
     <ActiveSectionProvider>
+      <ScrollToTop />
       <Navbar />
       {/* This container holds whatever page component is currently selected */}
       <div className="container py-4 px-3 mx-auto" style={{ minHeight: '80vh' }}>

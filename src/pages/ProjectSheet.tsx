@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Prose from '../components/Prose';
 
@@ -47,6 +47,14 @@ export default function ProjectSheet({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // The panel stays mounted between projects (so its content doesn't blank
+  // during the close animation), so .psheet__grid keeps whatever scroll
+  // position the previous project left it at. Snap it back to the top each
+  // time the sheet opens.
+  useLayoutEffect(() => {
+    if (open && scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [open]);
 
   // Esc to close + lock body scroll + move focus into the panel.
   useEffect(() => {

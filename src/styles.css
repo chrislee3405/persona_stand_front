@@ -1,13 +1,95 @@
 /* ===================================================================
-   Large-display tuning (QHD / 4K)
-
-   Bootstrap's `.container` max-width tops out at 1320px, so on a wide
-   monitor the content is a thin ribbon with huge side gutters. Step the
-   cap up on very wide viewports, and nudge the root font-size so the
-   rem-based type/spacing isn't tiny at 100% OS scaling.
+   Global type scale + large-display tuning
 
    Loaded after bootstrap in main.tsx so these win.
+
+   Two dials:
+     * html font-size  -- the rem base. Kept near 16px (16px on phones so
+       an iOS <=16px form field like the chat composer doesn't trigger
+       zoom; 16.5px on wide screens). It only lightly scales spacing and
+       the chatroom's rem-based type.
+     * --bs-body-font-size -- the CONTENT text size (paragraphs, lists,
+       muted helper text...). Set below 1rem so body copy is compact,
+       while headings are given their own larger sizes further down. The
+       gap between the two is deliberate: it makes headings read as
+       headings.
+
+   Resulting sizes:
+     content body : ~13px phone .... ~14.9px desktop
+     h2 section   : ~26px phone .... ~37px desktop
+     h4 / .h4     : ~19px phone .... ~25px desktop
    =================================================================== */
+
+/* App font: Inter (variable), loaded via @fontsource-variable/inter in
+   main.tsx. Overriding Bootstrap's font-family custom properties here is
+   enough -- `body` and every Bootstrap component read --bs-body-font-family,
+   and nothing in the app hardcodes its own font-family. "Inter Variable" is
+   the family name the fontsource package registers; "Inter" covers a static
+   copy installed on the OS; the rest is a robust system fallback. */
+:root {
+  --bs-font-sans-serif:
+    'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --bs-body-font-family: var(--bs-font-sans-serif);
+
+  /* Content text -- smaller than the rem base so body copy stays compact
+     and headings (sized separately below) stand out. Fluid: ~13px on
+     phones, ~unchanged on tablet/desktop (~14.9px). Bootstrap's `body`
+     reads this var. */
+  --bs-body-font-size: clamp(0.8125rem, 0.77rem + 0.18vw, 0.9rem);
+}
+
+html {
+  font-size: clamp(16px, 15.6px + 0.12vw, 16.5px);
+}
+
+/* Respect a user who has bumped their browser's default font size: fall
+   back to a plain proportional root so their preference isn't overridden
+   by the vw term. */
+@supports not (font-size: clamp(1rem, 1vw, 1rem)) {
+  html {
+    font-size: 100%;
+  }
+}
+
+/* ---- Heading scale -----------------------------------------------
+   Explicit, fluid, and larger than Bootstrap's default -- decoupled from
+   the small content size above so the header/body contrast is strong.
+   These win over Bootstrap's `h1, .h1 { }` rules (same selectors, loaded
+   later). Component styles that give a heading its own size (e.g.
+   .psheet__h) keep winning on specificity. */
+h1, .h1 { font-size: clamp(1.9rem, 1.55rem + 1.75vw, 2.75rem); }
+h2, .h2 { font-size: clamp(1.6rem, 1.35rem + 1.2vw, 2.25rem); }
+h3, .h3 { font-size: clamp(1.35rem, 1.2rem + 0.7vw, 1.75rem); }
+h4, .h4 { font-size: clamp(1.2rem, 1.1rem + 0.45vw, 1.5rem); }
+h5, .h5 { font-size: clamp(1.05rem, 1rem + 0.25vw, 1.25rem); }
+h6, .h6 { font-size: 1rem; }
+
+/* `.lead` is the shared "content paragraph" size: the About statement, the
+   Qualifications / Certifications blurbs, the Journey cards + detail sheet,
+   the Project sheet overview and the Contact intro all render body copy as
+   <p class="lead text-secondary ...">. Bootstrap's default (~26px) dwarfs
+   the compact body, so bring it down to one emphasised-paragraph size --
+   and step it down again on phones so every one of those places matches
+   the About section. Per-place rules must NOT re-set `font-size`. */
+.lead { font-size: clamp(1.05rem, 1rem + 0.35vw, 1.25rem); }
+@media (max-width: 575.98px) {
+  .lead { font-size: 0.875rem; line-height: 1.5; }
+}
+
+/* Keep the navbar text at the rem base -- it's chrome, not content. The
+   app's navbar is a custom sticky bar (no Bootstrap `.navbar` class), and
+   its `.nav-link`s inherit the shrunk --bs-body-font-size otherwise. */
+.sticky-top.bg-dark {
+  font-size: 1rem;
+}
+
+/* ---- Wide monitors -------------------------------------------------
+   Bootstrap's `.container` max-width tops out at 1320px, so on a wide
+   screen the content is a thin ribbon with huge side gutters. Step the
+   cap up, and keep nudging the root font past the fluid ceiling so the
+   rem-based type/spacing isn't tiny at 100% OS scaling on a 4K panel. */
 
 @media (min-width: 1600px) {
   .container,
@@ -30,7 +112,7 @@
     max-width: 1760px;
   }
   html {
-    font-size: 17px;
+    font-size: 17.5px;
   }
 }
 
@@ -44,7 +126,7 @@
     max-width: 2100px;
   }
   html {
-    font-size: 18px;
+    font-size: 18.5px;
   }
 }
 

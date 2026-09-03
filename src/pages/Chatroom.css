@@ -17,7 +17,7 @@
   --wa-panel-bg: #f0f2f5;      /* header + composer bars */
   --wa-chat-bg: #d8d2c8;       /* shows through if the wallpaper fails to load */
   --wa-bubble-in: #ffffff;
-  --wa-bubble-out: #d9fdd3;    /* retint here to move away from WhatsApp green */
+  --wa-bubble-out: #c2e1ff;    /* outgoing (user) bubble -- bright light blue */
   --wa-bubble-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
   --wa-text: #111b21;
   --wa-meta: rgba(17, 27, 33, 0.45);
@@ -56,9 +56,16 @@
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 50%;
+  background: #6a7175;   /* tint behind a loading / transparent image */
+}
+/* image variant */
+img.chatroom__avatar {
+  object-fit: cover;
+}
+/* monogram fallback variant */
+span.chatroom__avatar {
   display: grid;
   place-items: center;
-  background: #6a7175;
   color: #fff;
   font-weight: 600;
 }
@@ -70,6 +77,9 @@
 .chatroom__status {
   font-size: 0.8rem;
   color: var(--wa-meta);
+}
+.chatroom__status--offline {
+  color: var(--wa-blocked-text);
 }
 
 /* ---- invite-code strip (kept from the prototype, restyled) ------- */
@@ -99,10 +109,13 @@
   padding: 0.35rem 0.85rem;
   border: 0;
   border-radius: 0.4rem;
-  background: #128c7e;
+  background: var(--bs-primary, #0d6efd);
   color: #fff;
   font: inherit;
   cursor: pointer;
+}
+.chatroom__code button:not(:disabled):hover {
+  background: #0b5ed7;
 }
 .chatroom__code button:disabled {
   opacity: 0.6;
@@ -353,28 +366,35 @@
 .chatroom-consent__actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: space-between;   /* Agree pinned left, I Don't Agree pinned right */
   gap: 0.6rem;
   margin-top: 1rem;
 }
 .chatroom-consent__agree,
 .chatroom-consent__decline {
+  flex: 1 1 0;            /* both buttons share the row equally -> same width */
+  min-width: 8rem;        /* ...but wrap to their own line before getting cramped */
   padding: 0.5rem 1.25rem;
   border-radius: 0.5rem;
   font: inherit;
+  text-align: center;
   cursor: pointer;
 }
 .chatroom-consent__agree {
   border: 0;
-  background: #128c7e;
+  background: var(--bs-primary, #0d6efd);
   color: #fff;
 }
+.chatroom-consent__agree:hover:not(:disabled) {
+  background: #0b5ed7;
+}
 .chatroom-consent__decline {
-  border: 1px solid #dc3545;
-  background: #fff;
-  color: #dc3545;
+  border: 0;
+  background: #dc3545;
+  color: #fff;
 }
 .chatroom-consent__decline:hover:not(:disabled) {
-  background: #fdecee;
+  background: #bb2d3b;
 }
 .chatroom-consent__agree:disabled,
 .chatroom-consent__decline:disabled {
@@ -385,7 +405,7 @@
 /* ===================================================================
    Send button + dispatch animation
 
-   A solid green circle with a white V-shaped (paper-plane) mark. The two
+   A solid blue circle with a white V-shaped (paper-plane) mark. The two
    white blades straighten as the message is "flung" right, disappear off
    the circle's edge, then wrap back in from the left and settle to the
    resting pose. Driven by the `.is-sending` class, added on submit and
@@ -394,7 +414,7 @@
    animationend never fires).
    =================================================================== */
 .send-btn {
-  --send-circle: #128c7e;      /* the green disc (matches the app's other greens) */
+  --send-circle: var(--bs-primary, #0d6efd);   /* the blue disc (matches the app's primary buttons) */
   --send-duration: 1s;          /* snappier: 0.7s -- slower: 1.3s */
 
   appearance: none;
@@ -413,7 +433,7 @@
   transition: background-color 0.15s ease;
 }
 .send-btn:hover {
-  background: #0f7267;
+  background: #0b5ed7;
 }
 .send-btn:focus-visible {
   outline: 2px solid var(--send-circle);

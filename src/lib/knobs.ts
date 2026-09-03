@@ -181,6 +181,14 @@ export function heroVars(c: HeroConfig): CSSProperties {
  *  height + a little breathing room. */
 export const ANCHOR_OFFSET = { scrollMarginTop: '5.5rem' } as const;
 
+/** Tighter offset for the full-bleed hero bands (About / Qualifications /
+ *  Certifications with an image). They have no heading padding above the
+ *  photo, so any breathing room reads as a white gap between the navbar
+ *  and the image when the section is jumped to. Set a hair UNDER the
+ *  ~72px navbar so the photo's top edge always meets the navbar with no
+ *  gap -- the sliver that lands behind the opaque bar is imperceptible. */
+export const HERO_ANCHOR_OFFSET = { scrollMarginTop: '4.25rem' } as const;
+
 /** Scroll-spy "you are here" line, px from the top of the viewport: a
  *  section lights up in the navbar once its top crosses this. Keep it a bit
  *  below the sticky navbar (~72px) so the switch happens as a heading
