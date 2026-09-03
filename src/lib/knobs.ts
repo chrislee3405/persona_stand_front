@@ -196,9 +196,9 @@ export const SCROLLSPY_LINE = 110;
 
 /** Per-turn reveal delay = textLength * this, then clamped to
  *  [TYPING_MIN_MS, TYPING_MAX_MS]. UP -> slower "typing". */
-export const TYPING_MS_PER_CHAR = 40;
-export const TYPING_MIN_MS = 400;
-export const TYPING_MAX_MS = 3000;
+export const TYPING_MS_PER_CHAR = 150;
+export const TYPING_MIN_MS = 1000;
+export const TYPING_MAX_MS = 5000;
 
 /** +/- this fraction of the base delay, randomized per turn -- a perfectly
  *  deterministic length-proportional delay feels robotic; real typing
@@ -212,5 +212,19 @@ export const TYPING_JITTER_RATIO = 0.25;
  *  INITIAL_HOLD_MS: grace window right after a submit, input still empty.
  *  TYPING_IDLE_MS:  once a follow-up is being typed, how long typing must
  *                   be idle before the held pieces flush. Reset per keystroke. */
-export const INITIAL_HOLD_MS = 1500;
+export const INITIAL_HOLD_MS = 2000;
 export const TYPING_IDLE_MS = 5000;
+
+/** "Persona is typing" three-dot bubble timing. The bubble is never shown
+ *  instantly -- there is a beat of nothing first, so a quick reply never
+ *  flashes it.
+ *  FIRST_REPLY_TYPING_DELAY_MS: after the request goes to the backend, how
+ *                   long to wait before the bubble appears while the first
+ *                   reply fragment is still pending. If the reply lands
+ *                   sooner, the bubble is skipped entirely.
+ *  FRAGMENT_TYPING_DELAY_MS: within the gap between two revealed fragments,
+ *                   how long into that gap before the bubble appears. If the
+ *                   gap (see TYPING_MS_PER_CHAR etc.) is shorter than this,
+ *                   no bubble shows for that gap. */
+export const FIRST_REPLY_TYPING_DELAY_MS = 300;
+export const FRAGMENT_TYPING_DELAY_MS = 200;

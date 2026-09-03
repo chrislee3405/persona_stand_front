@@ -88,14 +88,6 @@ interface ProjectDetail {
   videos?: { src_tag: string; poster_tag?: string; caption?: string }[];
 }
 
-/** Contact section copy (site_content section "contact"). */
-interface ContactInfo {
-  intro?: string | null;
-  email?: string;
-  location?: string;
-  links?: { label: string; href: string }[];
-}
-
 interface JourneyBlock {
   id: string;
   year: string;
@@ -116,6 +108,14 @@ interface JourneyDetail {
   body?: string;       // main text; blank lines -> paragraphs
   highlights?: string[];                       // bullet list under the body
   links?: { label: string; href: string }[];  // related links as buttons
+}
+
+/** Contact section copy (site_content section "contact"). */
+interface ContactInfo {
+  intro?: string | null;
+  email?: string;
+  location?: string;
+  links?: { label: string; href: string }[];
 }
 
 /**
@@ -361,15 +361,6 @@ export default function Home() {
   const certImg = assetUrl(pickImage(images, 'certifications', 'banner'));
   const certCfg: HeroConfig = { ...CERT_HERO_DEFAULTS, ...statement.certHero };
 
-  const journey = (Array.isArray(content.journey) ? content.journey : []) as JourneyBlock[];
-  // Expanded copy per block, keyed by block id (site_journey table). A block
-  // with an entry here gets a clickable card that opens the bottom sheet.
-  const journeyDetailMap = journeyDetails as Record<string, JourneyDetail | undefined>;
-  const openJourneySheet = (block: JourneyBlock, detail: JourneyDetail) => {
-    setSheet({ block, detail });
-    setSheetOpen(true);
-  };
-
   const projectItems = (Array.isArray(content.projects) ? content.projects : []) as Project[];
   // Expanded copy per project, keyed by project id (site_project table). A
   // thumbnail with an entry here is clickable and opens the bottom sheet.
@@ -421,6 +412,15 @@ export default function Home() {
     setProjectSheetOpen(true);
   };
 
+  const journey = (Array.isArray(content.journey) ? content.journey : []) as JourneyBlock[];
+  // Expanded copy per block, keyed by block id (site_journey table). A block
+  // with an entry here gets a clickable card that opens the bottom sheet.
+  const journeyDetailMap = journeyDetails as Record<string, JourneyDetail | undefined>;
+  const openJourneySheet = (block: JourneyBlock, detail: JourneyDetail) => {
+    setSheet({ block, detail });
+    setSheetOpen(true);
+  };
+
   const contact = (content.contact ?? {}) as ContactInfo;
   const contactLinks = Array.isArray(contact.links) ? contact.links : [];
 
@@ -433,33 +433,6 @@ export default function Home() {
           <Nav.Link as={NavLink} to={ctaHref}>{ctaLabel}</Nav.Link>
         </button>
       </div>
-    </>
-  );
-
-  const certContent = (
-    <>
-      <h2 className="mb-4">Certifications</h2>
-      {loading && <p className="text-muted">Loading…</p>}
-      {!loading && certifications.length === 0 && (
-        <p className="text-muted">No certifications content yet.</p>
-      )}
-      {certifications.length > 0 && (
-        <ul className="mb-0">
-          {certifications.map(item => (
-            <li key={item.id} className="mb-3">
-              <span className="fw-medium">{item.title}</span>
-              {(item.issuer || item.year) && (
-                <div className="text-secondary">
-                  {item.issuer && <em>{item.issuer}</em>}
-                  {item.issuer && item.year && ' · '}
-                  {item.year}
-                </div>
-              )}
-              {item.detail && <div className="text-secondary">{item.detail}</div>}
-            </li>
-          ))}
-        </ul>
-      )}
     </>
   );
 
@@ -480,6 +453,33 @@ export default function Home() {
                 <div className="text-secondary">
                   {item.institution && <em>{item.institution}</em>}
                   {item.institution && item.year && ' · '}
+                  {item.year}
+                </div>
+              )}
+              {item.detail && <div className="text-secondary">{item.detail}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
+  const certContent = (
+    <>
+      <h2 className="mb-4">Certifications</h2>
+      {loading && <p className="text-muted">Loading…</p>}
+      {!loading && certifications.length === 0 && (
+        <p className="text-muted">No certifications content yet.</p>
+      )}
+      {certifications.length > 0 && (
+        <ul className="mb-0">
+          {certifications.map(item => (
+            <li key={item.id} className="mb-3">
+              <span className="fw-medium">{item.title}</span>
+              {(item.issuer || item.year) && (
+                <div className="text-secondary">
+                  {item.issuer && <em>{item.issuer}</em>}
+                  {item.issuer && item.year && ' · '}
                   {item.year}
                 </div>
               )}

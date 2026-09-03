@@ -8,6 +8,8 @@ import {
   TYPING_JITTER_RATIO,
   INITIAL_HOLD_MS,
   TYPING_IDLE_MS,
+  FIRST_REPLY_TYPING_DELAY_MS,
+  FRAGMENT_TYPING_DELAY_MS,
 } from '../lib/knobs';
 
 function generateMessageId(): string {
@@ -37,6 +39,27 @@ export const MAX_MESSAGE_LENGTH = 750;
 
 const PENDING_LIMIT_WARNING = "Too many messages waiting for a reply — please wait a moment before sending another.";
 const MESSAGE_TOO_LONG_WARNING = `Message is too long (max ${MAX_MESSAGE_LENGTH} characters).`;
+const PRIVACY_WARNING = "Your message looks like it contains personal or private information, so it wasn't sent.";
+
+// The backend rejects a user message with one of these statuses and sends a
+// human-readable `detail` explaining why. We surface that detail (falling
+// back to the text here) and paint the offending bubble(s) red.
+const REJECT_FALLBACKS: Record<number, string> = {
+  400: PRIVACY_WARNING,
+  413: MESSAGE_TOO_LONG_WARNING,
+  429: PENDING_LIMIT_WARNING,
+};
+
+// Pull FastAPI's `{ "detail": "..." }` off an error response, or fall back
+// to `fallback` if the body isn't JSON / has no string detail.
+async function errorDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const data = await response.json();
+    return typeof data?.detail === 'string' && data.detail.trim() ? data.detail : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 // --- Rapid-fire fragment batching -------------------------------------------
 // A submitted message isn't dispatched to the backend immediately. It's held
@@ -69,9 +92,10 @@ interface UseChatDispatchArgs {
   // Whether this session holds a verified invite code (from useInviteCode)
   // -- picks the invite vs guest endpoint.
   isVerified: boolean;
-  // Called when the backend rejects a turn with HTTP 403 -- re-opens the
-  // consent popup (useConsent.revokeConsent).
-  onConsentRevoked: () => void;
+  // Called whenever a send is attempted without consent -- either the user
+  // dismissed the terms popup and then hit send, or the backend rejected a
+  // turn with HTTP 403. Re-opens the (dismissible) terms popup.
+  onConsentRequired: () => void;
 }
 
 /**
@@ -80,7 +104,7 @@ interface UseChatDispatchArgs {
  * timer), the pending-message cap, the per-turn network request, and the
  * warning / blocked-bubble UI state. Returns only what the JSX needs.
  */
-export function useChatDispatch({ consented, isVerified, onConsentRevoked }: UseChatDispatchArgs) {
+export function useChatDispatch({ consented, isVerified, onConsentRequired }: UseChatDispatchArgs) {
   const {
     setMessages,
     conversationId, setConversationId,
@@ -141,6 +165,14 @@ export function useChatDispatch({ consented, isVerified, onConsentRevoked }: Use
   // counts as one unit here (bumped when the group starts, released when
   // its single combined request finishes).
   const [pendingCount, setPendingCount] = useState(0);
+  // Drives the "persona is typing" three-dot bubble in Chatroom
+  // (isAwaitingReply). Never shown while the user is still typing or during
+  // the batching hold. Shown, after a short delay each time (see
+  // FIRST_REPLY_TYPING_DELAY_MS / FRAGMENT_TYPING_DELAY_MS), while waiting
+  // on the first reply fragment and in the gap before each follow-up
+  // fragment. A counter, not a boolean, so overlapping waits from
+  // rapid-fire sends don't cancel each other out.
+  const [typingCount, setTypingCount] = useState(0);
   // Shared banner text for both the pending-message cap and the
   // message-too-long check below -- null hides the banner.
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
@@ -177,6 +209,25 @@ export function useChatDispatch({ consented, isVerified, onConsentRevoked }: Use
     const waitForPreviousSend = conversationIdReadyRef.current;
     conversationIdReadyRef.current = thisReady;
 
+    // Delayed "persona is typing" bubble for the wait before the FIRST
+    // reply fragment. A timer arms it FIRST_REPLY_TYPING_DELAY_MS after the
+    // request goes out; a reply that lands sooner cancels the timer, so a
+    // quick reply never flashes it. Cleared right before the first fragment
+    // reveals, and again in `finally` as a backstop for the failure paths.
+    let waitTypingTimer: ReturnType<typeof setTimeout> | null = null;
+    let waitTypingOn = false;
+    const armWaitTyping = () => {
+      waitTypingTimer = setTimeout(() => {
+        waitTypingTimer = null;
+        waitTypingOn = true;
+        setTypingCount(n => n + 1);
+      }, FIRST_REPLY_TYPING_DELAY_MS);
+    };
+    const clearWaitTyping = () => {
+      if (waitTypingTimer) { clearTimeout(waitTypingTimer); waitTypingTimer = null; }
+      if (waitTypingOn) { waitTypingOn = false; setTypingCount(n => Math.max(0, n - 1)); }
+    };
+
     try {
       await waitForPreviousSend;
 
@@ -201,6 +252,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRevoked }: Use
         body: JSON.stringify(requestBody)
       });
 
+      armWaitTyping();
       let response = await postChat(isVerified ? '/api/invitechat' : '/api/guestchat');
 
       if (response.status === 401 && isVerified) {
@@ -218,35 +270,36 @@ export function useChatDispatch({ consented, isVerified, onConsentRevoked }: Use
         // Rare fallback (e.g. the session's consent record was cleared
         // between useConsent's mount check and now) -- re-show the popup
         // rather than erroring out.
-        onConsentRevoked();
+        onConsentRequired();
         return;
       }
 
-      if (response.status === 429) {
-        // Belt-and-suspenders: the client-side cap should normally catch
-        // this first, but a second tab (or a direct API call) can still
-        // hit the backend's real cap. The optimistic user bubbles were
-        // already added and the input already cleared by this point, so
-        // this path doesn't retract/restore either -- it surfaces the
-        // warning and paints the rejected bubbles red (same treatment as
-        // 413) so the user can see which pieces didn't go through.
-        setWarningMessage(PENDING_LIMIT_WARNING);
-        setBlockedIds(prev => [...prev, ...groupIds]);
-        return;
-      }
-
-      if (response.status === 413) {
-        // maxLength / the client-side check catch a single over-long
-        // piece, but a group of individually-fine pieces can still exceed
-        // MAX_MESSAGE_LENGTH once combined. Same rare-path handling as 429
-        // above -- surface the warning and paint the rejected bubbles red.
-        setWarningMessage(MESSAGE_TOO_LONG_WARNING);
+      if (response.status in REJECT_FALLBACKS) {
+        // The backend refused this user message and said why:
+        //   400 -> privacy (message contains personal/sensitive info)
+        //   413 -> too long once the held fragments were combined
+        //   429 -> sending faster than replies come back
+        // The optimistic user bubbles were already added and the input
+        // cleared by now, so surface the backend's reason as a warning and
+        // paint exactly those bubbles red so the user sees which pieces
+        // didn't go through.
+        setWarningMessage(await errorDetail(response, REJECT_FALLBACKS[response.status]));
         setBlockedIds(prev => [...prev, ...groupIds]);
         return;
       }
 
       if (!response.ok) {
-        throw new Error(`Server responded with status code: ${response.status}`);
+        // Some other non-2xx -- a 5xx, or a status we don't special-case.
+        // Not necessarily the user's message at fault, so no red bubble;
+        // just a system notice, using the backend's `detail` when present.
+        const text = await errorDetail(
+          response,
+          response.status >= 500
+            ? "The server ran into a problem answering that. Please try again."
+            : "That message couldn't be sent. Please try again."
+        );
+        setMessages(prev => [...prev, createMessage(text, 'system')]);
+        return;
       }
 
       const data = await response.json();
@@ -287,25 +340,55 @@ export function useChatDispatch({ consented, isVerified, onConsentRevoked }: Use
       // backend's own processing time (topic matching, generation, gate
       // verification) already covers the "thinking" pause, so delaying it
       // again would just feel sluggish.
+      // The reply is in hand -- the first fragment is about to show, so the
+      // "waiting for first reply" bubble comes down now.
+      clearWaitTyping();
+
+      // The backend tags the whole reply's sender: 'system' for a generated
+      // notice (e.g. the response-gate fallback "having trouble forming a
+      // suitable response"), otherwise a normal persona turn. Anything that
+      // isn't explicitly 'system' is treated as 'backend'.
       const turns = data.turns as string[];
+      const turnSender: Message['sender'] = data.sender === 'system' ? 'system' : 'backend';
       for (let i = 0; i < turns.length; i++) {
         if (i > 0) {
-          await sleep(typingDelayFor(turns[i]));
+          // Gap before this follow-up fragment: a plain pause first, THEN
+          // the three-dot "typing" bubble for the remainder -- so the
+          // bubble doesn't snap on the instant the previous fragment lands.
+          // A gap shorter than the knob shows no bubble at all. sleep()
+          // never rejects and the decrement sits right after it, so the
+          // counter always balances.
+          const gap = typingDelayFor(turns[i]);
+          if (gap > FRAGMENT_TYPING_DELAY_MS) {
+            await sleep(FRAGMENT_TYPING_DELAY_MS);
+            setTypingCount(n => n + 1);
+            await sleep(gap - FRAGMENT_TYPING_DELAY_MS);
+            setTypingCount(n => Math.max(0, n - 1));
+          } else {
+            await sleep(gap);
+          }
         }
-        const backendMessage = createMessage(turns[i], 'backend');
-        setMessages(prev => [...prev, backendMessage]);
+        const turnMessage = createMessage(turns[i], turnSender);
+        setMessages(prev => [...prev, turnMessage]);
       }
 
 
     } catch (error) {
-      console.error("Server connection dropped:", error);
+      // Reached only by a rejected fetch (no network / server unreachable)
+      // or a malformed 200 response -- every handled HTTP status returns
+      // above with its own specific message.
+      console.error("Chat request failed:", error);
       const errorMessage = createMessage(
-        "Connection error: Failed to receive response from the negotiation terminal server.",
-        'backend'
+        "Couldn't reach the server. Check your connection and try again.",
+        'system'
       );
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setPendingCount(prev => Math.max(0, prev - 1));
+      // Backstop: drop the "waiting for first reply" bubble (and its
+      // pending timer) on the 403/429/413 early returns and the catch.
+      // No-op on the success path -- already cleared before the reveal.
+      clearWaitTyping();
       // Catch-all for every exit path that isn't the success path above
       // (403/429/413 early returns, thrown/network errors) -- guarantees
       // whatever's chained behind this send is never left waiting forever
@@ -354,10 +437,14 @@ export function useChatDispatch({ consented, isVerified, onConsentRevoked }: Use
       return;
     }
 
-    // The overlay should already prevent this, but the backend is the
-    // real gate (see ChatService.handle_chat_turn's consent check) --
-    // this is just a cheap early return, not the enforcement.
-    if (!consented) return;
+    // The terms popup is dismissible now (an "I Don't Agree" button lets the
+    // visitor browse the chatroom), so a send can genuinely arrive without
+    // consent -- re-open the popup and hold the message back. The backend is
+    // still the real gate (see ChatService.handle_chat_turn's consent check).
+    if (!consented) {
+      onConsentRequired();
+      return;
+    }
 
     // Real-world text threads let you stack a few outgoing messages before
     // a reply lands, but not unboundedly -- past the cap, block the send
@@ -398,7 +485,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRevoked }: Use
     scheduleHoldFlush(INITIAL_HOLD_MS);
   };
 
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setInputMessage(e.target.value);
     // A keystroke while a group is held means the user is composing a
     // follow-up -- extend the wait to the longer typing-idle window
@@ -406,5 +493,5 @@ export function useChatDispatch({ consented, isVerified, onConsentRevoked }: Use
     if (isHoldingRef.current) scheduleHoldFlush(TYPING_IDLE_MS);
   };
 
-  return { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds };
+  return { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, isAwaitingReply: typingCount > 0 };
 }
