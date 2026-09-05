@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import Nav from 'react-bootstrap/Nav';
 import { useSiteContent, pickImage } from '../hooks/useSiteContent';
 import { useMediaPrefetch } from '../hooks/useMediaPrefetch';
+import { useDragScroll } from '../hooks/useDragScroll';
 import { useActiveSection } from '../context/ActiveSectionContext';
 import { assetUrl } from '../lib/assetUrl';
 import Prose from '../components/Prose';
+import ProjectDots from '../components/ProjectDots';
+import SectionState from '../components/SectionState';
+import BottomSheet from '../components/BottomSheet';
 import ProjectSheet, { type ProjectSheetData } from './ProjectSheet';
 import githubIcon from '../assets/icons/github.png';
 import linkedinIcon from '../assets/icons/linkin.png';
@@ -18,20 +21,11 @@ import {
   CERT_HERO_DEFAULTS,
   heroVars,
   ANCHOR_OFFSET,
+  HERO_ANCHOR_OFFSET,
   SCROLLSPY_LINE,
+  SECTION_IDS,
 } from '../lib/knobs';
 import './Home.css';
-
-// Home-page scroll sections, top-to-bottom. Order MUST match the navbar's
-// SECTIONS list and the JSX below so the scroll-spy highlight stays in sync.
-const SECTION_IDS = [
-  'about',
-  'qualifications',
-  'certifications',
-  'projects',
-  'journey',
-  'contact',
-] as const;
 
 interface PersonalStatement {
   heading?: string;
@@ -88,18 +82,12 @@ interface ProjectDetail {
   videos?: { src_tag: string; poster_tag?: string; caption?: string }[];
 }
 
-/** Contact section copy (site_content section "contact"). */
-interface ContactInfo {
-  intro?: string | null;
-  email?: string;
-  location?: string;
-  links?: { label: string; href: string }[];
-}
-
 interface JourneyBlock {
   id: string;
   year: string;
   title: string;
+  institution?: string;  // optional: the school / company / organisation --
+                         // shown in italics under the title.
   body: string;
   image_tag?: string;   // optional: names a site_image row -- section
                         // "journey", description == this value. Its
@@ -116,6 +104,14 @@ interface JourneyDetail {
   body?: string;       // main text; blank lines -> paragraphs
   highlights?: string[];                       // bullet list under the body
   links?: { label: string; href: string }[];  // related links as buttons
+}
+
+/** Contact section copy (site_content section "contact"). */
+interface ContactInfo {
+  intro?: string | null;
+  email?: string;
+  location?: string;
+  links?: { label: string; href: string }[];
 }
 
 /**
@@ -163,11 +159,10 @@ function HeroBand({
 /**
  * Bottom "sheet" pop-up with the expanded story for one Journey block.
  * `detail` is the site_journey content; `block` supplies the year label and
- * the fallback title. Always mounted, portalled to <body>; `open` toggles a
- * class that slides the panel up from the bottom edge. Esc / the backdrop /
- * the close button dismiss it, and body scroll is locked while it is up.
- * The last block/detail stay rendered after close so the panel doesn't
- * blank as it slides away.
+ * the fallback title. The shell -- portal, backdrop, slide-up, Esc / close
+ * button, body-scroll lock and scroll-reset-on-open -- lives in
+ * <BottomSheet>; this component is only the content. The last block/detail
+ * stay rendered after close so the panel doesn't blank as it slides away.
  */
 function JourneySheet({
   open,
@@ -180,90 +175,64 @@ function JourneySheet({
   detail?: JourneyDetail;
   onClose: () => void;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open, onClose]);
+  // Owned here (rather than inside BottomSheet) only so a future feature
+  // could measure this sheet's scroll area; BottomSheet attaches it and
+  // handles the reset-to-top on open.
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const title = detail?.heading ?? block?.title ?? '';
   const highlights = (detail?.highlights ?? []).filter(Boolean);
   const links = (detail?.links ?? []).filter(l => l && l.href);
 
-  return createPortal(
-    <div className={`jsheet${open ? ' jsheet--open' : ''}`} aria-hidden={!open}>
-      <div className="jsheet__backdrop" onClick={onClose} />
-      <div
-        className="jsheet__panel"
-        ref={panelRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="jsheet-title"
-      >
-        <button
-          type="button"
-          className="sheet-close"
-          aria-label="Close"
-          onClick={onClose}
-        />
-        <div className="jsheet__bar">
-          <span className="jsheet__grip" aria-hidden="true" />
-        </div>
-        <div className="jsheet__scroll">
-          <div className="jsheet__head">
-            {block?.year && <span className="jsheet__year">{block.year}</span>}
-            <h2 id="jsheet-title" className="h4 mb-0">{title}</h2>
-          </div>
-          <div className="jsheet__body">
-            {detail?.subtitle && (
-              <p className="text-secondary fst-italic mb-3">{detail.subtitle}</p>
-            )}
-            <Prose text={detail?.body} />
-            {highlights.length > 0 && (
-              <ul className="mt-3">
-                {highlights.map((h, i) => (
-                  <li key={i} className="mb-2">{h}</li>
-                ))}
-              </ul>
-            )}
-            {links.length > 0 && (
-              <div className="d-flex flex-wrap gap-2 mt-4">
-                {links.map((l, i) =>
-                  /^https?:\/\//i.test(l.href) ? (
-                    <a
-                      key={i}
-                      className="btn btn-outline-primary btn-sm"
-                      href={l.href}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {l.label}
-                    </a>
-                  ) : (
-                    <NavLink key={i} className="btn btn-outline-primary btn-sm" to={l.href}>
-                      {l.label}
-                    </NavLink>
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+  return (
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      labelledBy="jsheet-title"
+      scrollRef={scrollRef}
+      panelClassName="jsheet__panel"
+      barClassName="jsheet__bar"
+      scrollClassName="jsheet__scroll"
+    >
+      <div className="jsheet__head">
+        {block?.year && <span className="jsheet__year">{block.year}</span>}
+        <h2 id="jsheet-title" className="h4 mb-0">{title}</h2>
       </div>
-    </div>,
-    document.body,
+      <div className="jsheet__body">
+        {detail?.subtitle && (
+          <p className="text-secondary fst-italic mb-3">{detail.subtitle}</p>
+        )}
+        <Prose text={detail?.body} />
+        {highlights.length > 0 && (
+          <ul className="mt-3">
+            {highlights.map((h, i) => (
+              <li key={i} className="mb-2">{h}</li>
+            ))}
+          </ul>
+        )}
+        {links.length > 0 && (
+          <div className="d-flex flex-wrap gap-2 mt-4">
+            {links.map((l, i) =>
+              /^https?:\/\//i.test(l.href) ? (
+                <a
+                  key={i}
+                  className="btn btn-outline-primary btn-sm"
+                  href={l.href}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {l.label}
+                </a>
+              ) : (
+                <NavLink key={i} className="btn btn-outline-primary btn-sm" to={l.href}>
+                  {l.label}
+                </NavLink>
+              ),
+            )}
+          </div>
+        )}
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -290,6 +259,45 @@ export default function Home() {
   // (video S3 keys turned into URLs); `projectSheetOpen` drives the slide.
   const [projectSheet, setProjectSheet] = useState<ProjectSheetData | null>(null);
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
+
+  // Trailing-spacer sizing. Contact is the last section and usually short,
+  // so on its own the page can't scroll far enough to bring "Contact Me" up
+  // to the anchor line. Rather than a flat 100vh spacer (which left a
+  // screenful of dead scroll once Contact reached the top), size the spacer
+  // to exactly the shortfall: pad the content below Contact's top up to --
+  // but not past -- one viewport minus the anchor offset, so Contact can
+  // just reach the top with no leftover scroll. Recomputed on resize and
+  // whenever the layout changes (ResizeObserver on <body>); the >1px guard
+  // stops the observer's own feedback loop.
+  const tailRef = useRef<HTMLDivElement>(null);
+
+  // The horizontal projects scroller -- read by <ProjectDots> to work out
+  // which project thumbnails are on screen, and made click-drag pannable so
+  // its scrollbar can be hidden.
+  const projScrollerRef = useRef<HTMLUListElement>(null);
+
+  useLayoutEffect(() => {
+    const el = tailRef.current;
+    if (!el) return;
+    const fit = () => {
+      const contact = document.getElementById('contact');
+      if (!contact) return;
+      const anchor = parseFloat(getComputedStyle(contact).scrollMarginTop) || 0;
+      const contactTop = contact.getBoundingClientRect().top + window.scrollY;
+      const spacerNow = el.offsetHeight;
+      const contentBelow = document.documentElement.scrollHeight - contactTop - spacerNow;
+      const needed = Math.max(0, window.innerHeight - anchor - contentBelow);
+      if (Math.abs(needed - spacerNow) > 1) el.style.height = `${needed}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    const ro = new ResizeObserver(fit);
+    ro.observe(document.body);
+    return () => {
+      window.removeEventListener('resize', fit);
+      ro.disconnect();
+    };
+  }, [loading, content]);
 
   // Scroll to the section named in the URL hash (e.g. /#journey) on first
   // load and whenever the hash changes. Re-run once content finishes
@@ -361,16 +369,15 @@ export default function Home() {
   const certImg = assetUrl(pickImage(images, 'certifications', 'banner'));
   const certCfg: HeroConfig = { ...CERT_HERO_DEFAULTS, ...statement.certHero };
 
-  const journey = (Array.isArray(content.journey) ? content.journey : []) as JourneyBlock[];
-  // Expanded copy per block, keyed by block id (site_journey table). A block
-  // with an entry here gets a clickable card that opens the bottom sheet.
-  const journeyDetailMap = journeyDetails as Record<string, JourneyDetail | undefined>;
-  const openJourneySheet = (block: JourneyBlock, detail: JourneyDetail) => {
-    setSheet({ block, detail });
-    setSheetOpen(true);
-  };
-
-  const projectItems = (Array.isArray(content.projects) ? content.projects : []) as Project[];
+  // Memoized: projectMediaUrls depends on this, and a fresh array each
+  // render would make that memo recompute every time.
+  const projectItems = useMemo(
+    () => (Array.isArray(content.projects) ? content.projects : []) as Project[],
+    [content.projects],
+  );
+  // Click-drag panning for the projects scroller (mouse only) -- pass the
+  // count so the hook re-attaches once the scroller has actually rendered.
+  useDragScroll(projScrollerRef, projectItems.length);
   // Expanded copy per project, keyed by project id (site_project table). A
   // thumbnail with an entry here is clickable and opens the bottom sheet.
   const projectDetailMap = projectDetails as Record<string, ProjectDetail | undefined>;
@@ -381,11 +388,9 @@ export default function Home() {
   // one that auto-plays -- already there. The rest stream on demand as the
   // viewer scrolls down to them. See useMediaPrefetch.
   const projectMediaUrls = useMemo(() => {
-    const projects = Array.isArray(content.projects) ? (content.projects as Project[]) : [];
-    const details = projectDetails as Record<string, ProjectDetail | undefined>;
     const out: string[] = [];
-    for (const p of projects) {
-      const first = details[p.id]?.videos?.[0];
+    for (const p of projectItems) {
+      const first = projectDetailMap[p.id]?.videos?.[0];
       if (!first) continue;
       const src = first.src_tag ? assetUrl(pickImage(images, 'projects', first.src_tag)) : undefined;
       const poster = first.poster_tag ? assetUrl(pickImage(images, 'projects', first.poster_tag)) : undefined;
@@ -393,7 +398,7 @@ export default function Home() {
       if (poster) out.push(poster);
     }
     return out;
-  }, [content, images, projectDetails]);
+  }, [projectItems, projectDetailMap, images]);
   useMediaPrefetch(projectMediaUrls);
   const openProjectSheet = (project: Project, detail: ProjectDetail) => {
     // Resolve video / poster tags to CDN URLs here so <ProjectSheet> stays
@@ -421,6 +426,15 @@ export default function Home() {
     setProjectSheetOpen(true);
   };
 
+  const journey = (Array.isArray(content.journey) ? content.journey : []) as JourneyBlock[];
+  // Expanded copy per block, keyed by block id (site_journey table). A block
+  // with an entry here gets a clickable card that opens the bottom sheet.
+  const journeyDetailMap = journeyDetails as Record<string, JourneyDetail | undefined>;
+  const openJourneySheet = (block: JourneyBlock, detail: JourneyDetail) => {
+    setSheet({ block, detail });
+    setSheetOpen(true);
+  };
+
   const contact = (content.contact ?? {}) as ContactInfo;
   const contactLinks = Array.isArray(contact.links) ? contact.links : [];
 
@@ -428,7 +442,9 @@ export default function Home() {
     <>
       {statement.heading && <h2 className="mb-3">{statement.heading}</h2>}
       <Prose text={statement.body} />
-      <div className="mt-4">
+      {/* CTA: centred on phones (< sm), left-aligned from sm up. The .btn is
+          inline-block, so text-align on this wrapper positions it. */}
+      <div className="mt-4 text-center text-sm-start">
         <button className="btn btn-primary btn-lg px-4 shadow-sm">
           <Nav.Link as={NavLink} to={ctaHref}>{ctaLabel}</Nav.Link>
         </button>
@@ -436,40 +452,10 @@ export default function Home() {
     </>
   );
 
-  const certContent = (
-    <>
-      <h2 className="mb-4">Certifications</h2>
-      {loading && <p className="text-muted">Loading…</p>}
-      {!loading && certifications.length === 0 && (
-        <p className="text-muted">No certifications content yet.</p>
-      )}
-      {certifications.length > 0 && (
-        <ul className="mb-0">
-          {certifications.map(item => (
-            <li key={item.id} className="mb-3">
-              <span className="fw-medium">{item.title}</span>
-              {(item.issuer || item.year) && (
-                <div className="text-secondary">
-                  {item.issuer && <em>{item.issuer}</em>}
-                  {item.issuer && item.year && ' · '}
-                  {item.year}
-                </div>
-              )}
-              {item.detail && <div className="text-secondary">{item.detail}</div>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
-
   const qualContent = (
     <>
       <h2 className="mb-4">Qualifications &amp; Awards</h2>
-      {loading && <p className="text-muted">Loading…</p>}
-      {!loading && qualifications.length === 0 && !qBody && (
-        <p className="text-muted">No qualifications content yet.</p>
-      )}
+      <SectionState loading={loading} empty={qualifications.length === 0 && !qBody} noun="qualifications" />
       {qBody && <Prose text={qBody} />}
       {qualifications.length > 0 && (
         <ul className="mb-0">
@@ -491,6 +477,30 @@ export default function Home() {
     </>
   );
 
+  const certContent = (
+    <>
+      <h2 className="mb-4">Certifications</h2>
+      <SectionState loading={loading} empty={certifications.length === 0} noun="certifications" />
+      {certifications.length > 0 && (
+        <ul className="mb-0">
+          {certifications.map(item => (
+            <li key={item.id} className="mb-3">
+              <span className="fw-medium">{item.title}</span>
+              {(item.issuer || item.year) && (
+                <div className="text-secondary">
+                  {item.issuer && <em>{item.issuer}</em>}
+                  {item.issuer && item.year && ' · '}
+                  {item.year}
+                </div>
+              )}
+              {item.detail && <div className="text-secondary">{item.detail}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
   return (
     <div>
 
@@ -500,7 +510,7 @@ export default function Home() {
           id="about"
           imageSrc={heroSrc}
           cfg={aboutCfg}
-          anchorStyle={ANCHOR_OFFSET}
+          anchorStyle={HERO_ANCHOR_OFFSET}
           ariaLabel={statement.heading ?? 'Portrait'}
         >
           {aboutText}
@@ -532,7 +542,7 @@ export default function Home() {
           imageSrc={qualImg}
           cfg={qualCfg}
           flip
-          anchorStyle={ANCHOR_OFFSET}
+          anchorStyle={HERO_ANCHOR_OFFSET}
           ariaLabel="Qualifications & Awards"
         >
           {qualContent}
@@ -549,7 +559,7 @@ export default function Home() {
           id="certifications"
           imageSrc={certImg}
           cfg={certCfg}
-          anchorStyle={ANCHOR_OFFSET}
+          anchorStyle={HERO_ANCHOR_OFFSET}
           ariaLabel="Certifications"
         >
           {certContent}
@@ -564,13 +574,10 @@ export default function Home() {
       <section id="projects" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
         <h2 className="mb-4">Projects</h2>
 
-        {loading && <p className="text-muted">Loading…</p>}
-        {!loading && projectItems.length === 0 && (
-          <p className="text-muted">No projects content yet.</p>
-        )}
+        <SectionState loading={loading} empty={projectItems.length === 0} noun="projects" />
 
         {projectItems.length > 0 && (
-          <ul className="proj-scroller" role="list">
+          <ul className="proj-scroller" role="list" ref={projScrollerRef}>
             {projectItems.map(p => {
               // Thumbnail URL is always resolved from the site_image table
               // (section "projects", description == image_tag or id).
@@ -607,16 +614,17 @@ export default function Home() {
             })}
           </ul>
         )}
+
+        {projectItems.length > 1 && (
+          <ProjectDots count={projectItems.length} scrollerRef={projScrollerRef} />
+        )}
       </section>
 
       {/* ===== Journey ===== */}
       <section id="journey" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
         <h2 className="mb-4">My Journey</h2>
 
-        {loading && <p className="text-muted">Loading…</p>}
-        {!loading && journey.length === 0 && (
-          <p className="text-muted">No journey content yet.</p>
-        )}
+        <SectionState loading={loading} empty={journey.length === 0} noun="journey" />
 
         {journey.length > 0 && (
           <ol className="jtl" role="list">
@@ -640,6 +648,7 @@ export default function Home() {
                   {isNow && <span className="jtl__badge">Now</span>}
                   <p className="jtl__year">{block.year}</p>
                   <h3 className="jtl__title h5">{block.title}</h3>
+                  {block.institution && <p className="jtl__org">{block.institution}</p>}
                   <Prose text={block.body} />
                   {hasDetail && (
                     <span className="jtl__more" aria-hidden="true">Read more →</span>
@@ -685,7 +694,11 @@ export default function Home() {
       <section id="contact" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
         <h2 className="mb-4">Contact Me</h2>
 
-        {loading && <p className="text-muted">Loading…</p>}
+        <SectionState
+          loading={loading}
+          empty={!contact.intro && !contact.email && !contact.location && contactLinks.length === 0}
+          noun="contact"
+        />
         {contact.intro && <p className="lead text-secondary lh-base">{contact.intro}</p>}
 
         {(contact.email || contact.location) && (
@@ -736,10 +749,12 @@ export default function Home() {
           </div>
         )}
 
-        {!loading && !contact.intro && !contact.email && !contact.location && contactLinks.length === 0 && (
-          <p className="text-muted">No contact content yet.</p>
-        )}
       </section>
+
+      {/* Trailing spacer -- height is set by the useLayoutEffect above so
+          "Contact Me" can scroll exactly to the anchor line with no extra
+          dead scroll after it. */}
+      <div className="section-tail" aria-hidden="true" ref={tailRef} />
 
       <JourneySheet
         open={sheetOpen}

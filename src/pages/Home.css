@@ -203,6 +203,52 @@ html {
   }
 }
 
+/* --- Smartphone: image ON TOP of the text (not a backdrop behind it) --
+   The <= 900px treatment above turns the photo into a faint full-bleed
+   wash sitting behind the copy. On a phone that just reads as "no image,
+   floating text", so for the About and Qualifications bands the photo
+   becomes a real block at the TOP of the band -- full-bleed, full
+   opacity, with a soft fade along its bottom edge -- and the text
+   follows beneath it in normal flow. Certifications is deliberately
+   EXCLUDED (:not(#certifications)) and keeps the faint-backdrop layout.
+   Body copy also steps down to a phone reading size (~14px, a
+   search-result snippet). Supersedes the <= 480px framing block above
+   for the two stacked bands. */
+@media (max-width: 575.98px) {
+  .hero-band:not(#certifications) {
+    --_bottom-fade: 2rem;      /* was 10px -- a softer seam into the text */
+    display: block;            /* was: flex row */
+    margin-bottom: 1.5rem;
+  }
+
+  /* About: frame the stacked photo from its CENTRE, not the top-left
+     corner the desktop layout uses (focusX 0 / focusY 15). */
+  #about.hero-band {
+    --_focus-x: 50%;
+    --_focus-y: 50%;
+  }
+
+  .hero-band:not(#certifications) .hero-band__img {
+    position: relative;        /* in normal flow, at the top of the band */
+    opacity: 1;                /* undo the <= 900px faint-backdrop wash */
+    transform: none;
+    aspect-ratio: var(--hero-phone-aspect, 4 / 3);
+    background-size: cover;
+    background-position: var(--_focus-x) var(--_focus-y);
+  }
+
+  .hero-band:not(#certifications) .hero-band__inner {
+    display: block;            /* was: flex, align-items: center */
+  }
+  .hero-band:not(#certifications) .hero-band__text {
+    padding: 1.25rem 1rem 0.5rem;
+  }
+
+  /* Body copy steps down to a phone reading size via the shared `.lead`
+     rule in styles.css -- no hero-specific override, so every section
+     matches. */
+}
+
 /* ===================================================================
    Journey timeline
 
@@ -213,6 +259,7 @@ html {
    =================================================================== */
 .jtl {
   --jtl-line: 6px;                 /* line thickness */
+  --jtl-line-fade: 4rem;           /* the line fades in from transparent over this much at the top */
   --jtl-gap: 4rem;                 /* space between the two columns (holds the line) */
   --jtl-pad: 1.25rem;              /* vertical padding per row */
   --jtl-point: 26px;              /* hexagon side-point depth */
@@ -232,7 +279,9 @@ html {
   padding: 0;
 }
 
-/* the vertical line */
+/* the vertical line -- fades in from transparent over the first
+   --jtl-line-fade at the top, so it grows out of nothing as the timeline
+   begins rather than starting on a hard edge */
 .jtl::before {
   content: "";
   position: absolute;
@@ -243,6 +292,8 @@ html {
   border-radius: var(--jtl-line);
   background: var(--jtl-rule);
   transform: translateX(-50%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--jtl-line-fade));
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--jtl-line-fade));
 }
 
 /* one row */
@@ -345,7 +396,23 @@ html {
 
 .jtl__year { margin: 0 0 0.15rem; font-weight: 700; font-size: 0.85rem; color: var(--jtl-accent); }
 .jtl__title { margin: 0 0 0.4rem; }
-.jtl .lead { font-size: 1rem; font-weight: 400; margin-bottom: 0; }
+/* italic school / company line under the title. Negative top margin pulls
+   it up tight under the title; blocks without an institution keep the
+   title's normal 0.4rem gap to the body. */
+.jtl__org {
+  margin: -0.25rem 0 0.5rem;
+  font-style: italic;
+  font-size: 0.9rem;
+  color: var(--bs-secondary-color, #6c757d);
+}
+/* Journey-card body: a notch smaller than the shared `.lead` size so it
+   doesn't read as big as the card's `.h5` title in these compact cards.
+   Floor matches the phone content size in styles.css. */
+.jtl .lead {
+  font-size: clamp(0.875rem, 0.8rem + 0.3vw, 0.95rem);
+  font-weight: 400;
+  margin-bottom: 0;
+}
 .jtl .lead + .lead { margin-top: 0.5rem; }
 
 .jtl__badge {
@@ -442,6 +509,7 @@ html {
   .jtl__item:nth-child(even) .jtl__card,
   .jtl__item--now:nth-child(odd)  .jtl__card,
   .jtl__item--now:nth-child(even) .jtl__card {
+    grid-row: 1;
     grid-column: 1;
     justify-self: stretch;
     max-width: none;
@@ -451,6 +519,7 @@ html {
   .jtl__item:nth-child(even) .jtl__media,
   .jtl__item--now:nth-child(odd)  .jtl__media,
   .jtl__item--now:nth-child(even) .jtl__media {
+    grid-row: 2;
     grid-column: 1;
     justify-self: stretch;
     max-width: none;
@@ -462,20 +531,34 @@ html {
     margin-left: calc(-1 * var(--now-shift));
   }
 
-  /* connector arm + dot: rail -> the hexagon's left point, at mid-height.
+  /* Connector arm + dot: rail -> the hexagon's left point. Placed as
+     overlapping grid items in the CARD's row (row 1), not positioned off
+     the whole item -- when the item also carries a stacked image below it
+     (.jtl__item--has-img), an item-relative `top: 50%` would drop them
+     into the gap between the card and the image. `align-items: center`
+     (inherited) now centres them on the card; a transform pulls them left
+     from the content column onto the rail.
      :nth-child() keeps specificity level with the odd/even ::after rules. */
   .jtl__item:nth-child(odd)::after,
   .jtl__item:nth-child(even)::after {
     display: block;
-    left: var(--rail);
-    right: auto;
+    position: static;          /* becomes a grid item; item `top/left` moot */
+    grid-row: 1;
+    grid-column: 1;
+    justify-self: start;
     width: var(--arm);
-    top: 50%;
+    transform: translateX(calc(-1 * var(--arm)));
   }
   .jtl__dot {
     display: block;
-    left: var(--rail);
-    top: 50%;
+    position: static;
+    grid-row: 1;
+    grid-column: 1;
+    justify-self: start;
+    /* -var(--arm) slides the left edge from the content column back to the
+       rail's left edge; -50% (own width) then centres the dot on it --
+       matches the position it had before the image-stack change. */
+    transform: translateX(calc(-50% - var(--arm)));
   }
 
   /* last ("now") row: NOT aligned with the others -- shifted left so the
@@ -540,15 +623,16 @@ html {
   opacity: 1;
 }
 
-.jsheet__panel {
+/* Shared panel shell for BOTH bottom sheets (the markup shell itself lives
+   in components/BottomSheet.tsx). Everything that makes it "a sheet" -- the
+   anchoring, the column layout, the rounded top, the slide-up transform --
+   is declared once here; each sheet's own rule below sets only what it
+   genuinely differs on (width, height cap, and psheet's container query). */
+.jsheet__panel,
+.psheet__panel {
   position: absolute;
   left: 50%;
   bottom: 0;
-  /* narrower than the viewport, leaving a gutter on each side (>= 2rem on
-     small screens), capped at a comfortable reading width */
-  width: min(64rem, calc(100% - 4rem));
-  /* never taller than 4/5 of the screen; longer content scrolls inside */
-  max-height: 80vh;
   display: flex;
   flex-direction: column;
   /* visible (not hidden) so the corner close button can straddle the edge;
@@ -561,8 +645,17 @@ html {
   transform: translate(-50%, 100%);
   transition: transform 0.3s ease;
 }
-.jsheet--open .jsheet__panel {
+.jsheet--open .jsheet__panel,
+.jsheet--open .psheet__panel {
   transform: translate(-50%, 0);
+}
+
+.jsheet__panel {
+  /* narrower than the viewport, leaving a gutter on each side (>= 2rem on
+     small screens), capped at a comfortable reading width */
+  width: min(64rem, calc(100% - 4rem));
+  /* never taller than 4/5 of the screen; longer content scrolls inside */
+  max-height: 80vh;
 }
 .jsheet__panel:focus {
   outline: none;
@@ -610,7 +703,9 @@ html {
   color: var(--bs-primary, #0d6efd);
 }
 .jsheet__body .lead {
-  font-size: 1.05rem;
+  /* match the journey-card body: a notch under the shared `.lead` size so
+     it doesn't compete with the sheet's `.h4` heading. */
+  font-size: clamp(0.875rem, 0.8rem + 0.3vw, 0.95rem);
   font-weight: 400;
 }
 
@@ -619,8 +714,10 @@ html {
    absolutely-positioned direct child of the panel; its centroid sits on
    the 45° point of the panel's top-right rounded corner (0.293r in from
    the square corner on each axis) so half the circle is over the sheet
-   and half over the backdrop. Below 900px it tucks fully inside so it
-   can't clip against the viewport edge. */
+   and half over the backdrop. Same anchoring at every width so the button
+   never intrudes on the header row -- the panels keep enough side gutter
+   (journey: 2rem always; project: --psheet-side-gap[-sm]) for the ~1rem
+   the circle overhangs past the panel edge to clear the viewport. */
 .sheet-close {
   position: absolute;
   top: calc(var(--sheet-radius, 1rem) * 0.2929);
@@ -654,16 +751,6 @@ html {
   outline: 2px solid var(--bs-primary, #0d6efd);
   outline-offset: 2px;
 }
-@media (max-width: 899.98px) {
-  .sheet-close {
-    top: 0.55rem;
-    right: 0.55rem;
-    transform: none;
-  }
-  .sheet-close:hover {
-    transform: scale(1.06);
-  }
-}
 
 /* ===================================================================
    Projects banner
@@ -676,7 +763,7 @@ html {
 .proj-scroller {
   list-style: none;
   margin: 0;
-  padding: 0.25rem 0 1rem;   /* room for the scrollbar below the cards */
+  padding: 0.25rem 0 1rem;   /* bottom: room for the scrollbar (PC) */
   display: flex;
   gap: 1.25rem;
   overflow-x: auto;
@@ -684,6 +771,30 @@ html {
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
+  cursor: grab;               /* click-drag to pan on PC (see useDragScroll) */
+}
+
+/* Keep the native scrollbar on a wide, mouse-driven window (PC); hide it on
+   phones and tablets (narrow, or a touch pointer), where you swipe / drag. */
+@media (max-width: 1023.98px), (pointer: coarse) {
+  .proj-scroller {
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* legacy Edge */
+  }
+  .proj-scroller::-webkit-scrollbar { display: none; }   /* Chrome / Safari */
+}
+
+.proj-scroller.is-dragging {
+  cursor: grabbing;
+  scroll-behavior: auto;     /* no smooth easing while the drag drives scrollLeft */
+  user-select: none;
+}
+.proj-scroller.is-dragging * {
+  cursor: grabbing;
+  pointer-events: none;      /* no hover transforms / stray clicks mid-drag */
+}
+.proj-scroller img {
+  -webkit-user-drag: none;   /* no native image drag-ghost when panning */
 }
 .proj-scroller__item {
   flex: 0 0 auto;
@@ -751,6 +862,74 @@ html {
 }
 
 /* ===================================================================
+   Projects minimap (ProjectDots)
+
+   A centred row of dots -- one per project -- under the scroller, with a
+   rounded "window" outline whose left/width are set imperatively (in
+   ProjectDots.tsx) to enclose whichever project dots are currently on
+   screen. It slides/resizes as the scroller scrolls.
+   =================================================================== */
+.proj-dots-bar {
+  margin-top: 1rem;
+  text-align: center;   /* centres the inline-flex .proj-dots */
+}
+.proj-dots {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.proj-dots__track {
+  display: flex;
+  flex-wrap: wrap;       /* a very large project count wraps rather than clipping */
+  justify-content: center;
+  gap: 12px;
+  padding: 6px;          /* room for the window outline */
+}
+.proj-dots__dot {
+  position: relative;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bs-border-color, #ced4da);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+/* Invisible hit area, well past the visible dot, so it's easy to click/tap
+   without making the dots themselves large. */
+.proj-dots__dot::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+.proj-dots__dot.is-active {
+  background: var(--bs-primary, #0d6efd);
+}
+.proj-dots__dot:focus-visible {
+  outline: 2px solid var(--bs-primary, #0d6efd);
+  outline-offset: 3px;
+}
+.proj-dots__window {
+  position: absolute;
+  top: 2px;           /* 6px track padding + 6px half-dot - 10px half-window */
+  left: 0;
+  width: 0;           /* both overwritten from JS */
+  height: 20px;       /* 12px dot + 4px inset each side */
+  border: 1.5px solid var(--bs-primary, #0d6efd);
+  border-radius: 999px;
+  pointer-events: none;
+  transition: left 0.2s ease, width 0.2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .proj-dots__dot,
+  .proj-dots__window {
+    transition: none;
+  }
+}
+
+/* ===================================================================
    Project detail sheet (bottom pop-up)
 
    Reuses the .jsheet layer + backdrop + slide from the journey sheet.
@@ -773,17 +952,16 @@ html {
 :root {
   --psheet-max-width: 86rem;
   --psheet-side-gap: 1.5rem;
-  --psheet-side-gap-sm: 0.80rem;
+  --psheet-side-gap-sm: 1.4rem;   /* >= the close button's ~1rem corner overhang, so it can straddle the edge like on desktop without clipping */
   --psheet-max-height: 90vh;
   --psheet-text-col: 34rem;
   --sheet-radius: 1rem;
   --sheet-close-size: 2.5rem;
 }
 
+/* Only what the project sheet differs on -- the rest is the shared
+   .jsheet__panel/.psheet__panel rule near the journey sheet above. */
 .psheet__panel {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
   width: min(
     var(--psheet-max-width, 72rem),
     calc(100% - 2 * var(--psheet-side-gap, 1.5rem))
@@ -793,19 +971,6 @@ html {
      viewport, so it collapses whenever the video column would get narrower
      than the text column (see @container rule) */
   container: psheet / inline-size;
-  display: flex;
-  flex-direction: column;
-  /* visible (not hidden) so the corner close button can straddle the edge;
-     the rounded top corners still clip the panel's own background. */
-  overflow: visible;
-  background: var(--bs-body-bg, #fff);
-  border-radius: var(--sheet-radius, 1rem) var(--sheet-radius, 1rem) 0 0;
-  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.25);
-  transform: translate(-50%, 100%);
-  transition: transform 0.3s ease;
-}
-.jsheet--open .psheet__panel {
-  transform: translate(-50%, 0);
 }
 .psheet__panel:focus {
   outline: none;
@@ -854,8 +1019,7 @@ html {
   color: var(--bs-secondary-color, #6c757d);
 }
 .psheet__aside .lead {
-  font-size: 1rem;
-  margin-bottom: 0;
+  margin-bottom: 0;   /* size: shared .lead rule (styles.css) */
 }
 .psheet__list {
   margin: 0;
@@ -927,4 +1091,17 @@ html {
   .psheet__aside {
     position: static;
   }
+}
+
+/* ===================================================================
+   Trailing spacer after the last section (Contact)
+
+   Contact is short, so on its own the page can't scroll far enough for
+   "Contact Me" in the navbar to bring the section's top to the anchor
+   line -- Journey stays on screen. Its height is computed in Home.tsx
+   (useLayoutEffect) to be exactly the shortfall, so Contact reaches the
+   top with no dead scroll left over. Empty and inert (aria-hidden).
+   =================================================================== */
+.section-tail {
+  min-height: 0;
 }

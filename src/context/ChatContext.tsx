@@ -4,7 +4,10 @@ import type { ReactNode } from 'react';
 export interface Message {
   id: string;
   text: string;
-  sender: 'user' | 'backend';
+  // 'user'    -- the visitor's own message (right-side bubble)
+  // 'backend' -- an AI reply turn (left-side bubble with a tail)
+  // 'system'  -- status / error notices (centred yellow bubble, no tail)
+  sender: 'user' | 'backend' | 'system';
 }
 
 interface ChatContextType {
@@ -24,7 +27,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = sessionStorage.getItem('chat_messages');
     return saved ? JSON.parse(saved) : [
-      { id: 'welcome-1', text: "System connected.", sender: 'backend' },
+      { id: 'welcome-1', text: "System connected.", sender: 'system' },
       { id: 'welcome-2', text: "Hello!", sender: 'backend' }
     ];
   });

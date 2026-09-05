@@ -4,19 +4,12 @@ import Container from 'react-bootstrap/Container';
 import Nav from 'react-bootstrap/Nav';
 import NavDropdown from 'react-bootstrap/NavDropdown';
 import { useActiveSection } from '../context/ActiveSectionContext';
+import { SECTIONS } from '../lib/knobs';
 
-// Home-page scroll sections, in display order. MUST match SECTION_IDS and the
-// section order in pages/Home.tsx so the scroll-spy highlight stays in sync.
-// "Projects" is just an anchor -- the individual projects open as a bottom
-// sheet from their thumbnails in that section, not as separate pages.
-const SECTIONS = [
-  { id: 'about', label: 'About Me' },
-  { id: 'qualifications', label: 'Qualifications & Awards' },
-  { id: 'certifications', label: 'Certifications' },
-  { id: 'projects', label: 'Projects' },
-  { id: 'journey', label: 'My journey' },
-  { id: 'contact', label: 'Contact Me' },
-] as const;
+// The section list lives in lib/knobs.ts -- Home's scroll-spy and App's
+// legacy redirect routes read the same array, so adding a section here is
+// impossible to get out of sync. "Projects" is just an anchor: individual
+// projects open as a bottom sheet from their thumbnails, not as pages.
 
 function Navbar() {
   const navigate = useNavigate();

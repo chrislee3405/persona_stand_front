@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getJson, postJson } from '../lib/api';
 
 /**
  * Compulsory-consent gate. Checks the backend on mount, exposes the current
@@ -15,16 +16,23 @@ export function useConsent() {
   // Pulled from the backend (consent_policy table) rather than hardcoded,
   // so the wording can change without a frontend redeploy.
   const [consentText, setConsentText] = useState<string | null>(null);
+  // true if the mount-time /api/consent check couldn't reach a working
+  // backend (network error, or a non-JSON response like the SPA index.html
+  // coming back from the proxy while the backend is down). Used by Chatroom
+  // to show "offline" before any message has been sent.
+  const [checkFailed, setCheckFailed] = useState(false);
 
   useEffect(() => {
-    fetch('/api/consent', { credentials: 'include' })
+    getJson('/api/consent')
       .then(res => res.json())
       .then(data => {
+        setCheckFailed(false);
         setConsented(Boolean(data?.consented));
         setConsentText(typeof data?.conditionText === 'string' ? data.conditionText : null);
       })
       .catch(error => {
         console.error("Failed to check consent status:", error);
+        setCheckFailed(true);
         // Fail closed -- if the check itself is broken, still show the
         // popup rather than silently letting messages through unconsented.
         setConsented(false);
@@ -38,12 +46,7 @@ export function useConsent() {
     if (!consentText) return;
     setIsSubmittingConsent(true);
     try {
-      const response = await fetch('/api/consent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ conditionText: consentText })
-      });
+      const response = await postJson('/api/consent', { conditionText: consentText });
       if (response.ok) {
         setConsented(true);
       }
@@ -59,5 +62,5 @@ export function useConsent() {
   // check and now).
   const revokeConsent = () => setConsented(false);
 
-  return { consented, consentText, isSubmittingConsent, agreeConsent, revokeConsent };
+  return { consented, consentText, isSubmittingConsent, agreeConsent, revokeConsent, checkFailed };
 }
