@@ -1,5 +1,7 @@
 import { createBrowserRouter, RouterProvider, Outlet, Navigate } from 'react-router-dom' // for direct to diff pages
 
+import { SECTIONS } from './lib/knobs.ts'
+
 import Navbar from './components/navbar.tsx'
 import Footer from './components/footer.tsx'
 import ScrollToTop from './components/ScrollToTop.tsx'
@@ -22,16 +24,21 @@ const router = createBrowserRouter([
       // one scrolling page.
       { path: "/", element: <Home /> },
 
-      // Old per-page URLs still work -- redirect to the matching section anchor.
-      // Projects no longer have their own pages: each opens as a bottom sheet
-      // from its thumbnail in the Projects section, so any /projects/* URL
-      // just lands on that section.
+      // Old per-page URLs still work -- redirect to the matching section
+      // anchor. Generated from the one SECTIONS list (lib/knobs.ts) that the
+      // navbar and Home's scroll-spy also read, so a new section gets its
+      // redirect for free.
+      ...SECTIONS.map(s => ({
+        path: s.id,
+        element: <Navigate to={`/#${s.id}`} replace />,
+      })),
+
+      // Two paths that don't follow the `/<section id>` pattern: the old
+      // About URL used a different slug, and projects had per-project pages.
+      // Projects no longer have their own pages -- each opens as a bottom
+      // sheet from its thumbnail -- so any /projects/* URL lands on the
+      // section too.
       { path: "aboutme", element: <Navigate to="/#about" replace /> },
-      { path: "qualifications", element: <Navigate to="/#qualifications" replace /> },
-      { path: "certifications", element: <Navigate to="/#certifications" replace /> },
-      { path: "journey", element: <Navigate to="/#journey" replace /> },
-      { path: "contact", element: <Navigate to="/#contact" replace /> },
-      { path: "projects", element: <Navigate to="/#projects" replace /> },
       { path: "projects/:slug", element: <Navigate to="/#projects" replace /> },
 
       { path: "chatroom", element: <Chatroom /> },

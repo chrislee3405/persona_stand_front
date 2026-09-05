@@ -23,7 +23,7 @@ export default function Chatroom() {
   // Invite-code verification: the code/input values, the in-flight flag, the
   // submit handler for the code form, and isVerified (also handed to
   // useChatDispatch so it can pick the invite vs guest endpoint).
-  const { code, inputCode, setInputCode, isVerified, isVerifyingCode, verifyCode } = useInviteCode();
+  const { code, inputCode, setInputCode, isVerified, isVerifyingCode, verifyCode, error: codeError } = useInviteCode();
 
   // Consent gate: whether the user has agreed, the policy text for the popup,
   // the submitting flag, agree/revoke actions, and whether the mount-time
@@ -49,7 +49,7 @@ export default function Chatroom() {
   // change handler, the send handler (rapid-fire fragment batching lives in
   // here), the warning-banner text, and the ids of bubbles the backend
   // refused (rendered as red dialog boxes below).
-  const { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, isAwaitingReply, isOffline } = useChatDispatch({
+  const { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, withheldIds, isAwaitingReply, isOffline } = useChatDispatch({
     consented,
     isVerified,
     onConsentRequired: requireConsent,
@@ -190,6 +190,9 @@ export default function Chatroom() {
         <button type="submit" disabled={isVerifyingCode || isVerified}>
           {isVerifyingCode ? 'Checking…' : isVerified ? 'Verified' : 'Verify'}
         </button>
+        {codeError && (
+          <p className="chatroom__code-error" role="alert">{codeError}</p>
+        )}
       </form>
 
       {/* Message area over the steady wallpaper */}
@@ -209,16 +212,22 @@ export default function Chatroom() {
             }
             // User message (right) or AI reply (left, with tail).
             const isUser = msg.sender === 'user';
+            // Two ways a user bubble stops being part of the conversation, with
+            // the same red styling but different notes -- "Not sent" would be a
+            // false statement for a withheld turn, which the server did receive
+            // and store before dropping it from the history.
             const blocked = isUser && blockedIds.includes(msg.id);
+            const withheld = isUser && !blocked && withheldIds.includes(msg.id);
+            const note = blocked ? '✕ Not sent' : withheld ? '✕ Not answered' : null;
             return (
               <div
                 key={msg.id}
-                className={`msg ${isUser ? 'msg--out' : 'msg--in'}${blocked ? ' msg--blocked' : ''}`}
+                className={`msg ${isUser ? 'msg--out' : 'msg--in'}${note ? ' msg--blocked' : ''}`}
               >
                 <div className="msg__bubble">
                   <span className="visually-hidden">{isUser ? 'You: ' : 'Persona: '}</span>
                   {msg.text}
-                  {blocked && <span className="msg__blocked-note">✕ Not sent</span>}
+                  {note && <span className="msg__blocked-note">{note}</span>}
                 </div>
               </div>
             );

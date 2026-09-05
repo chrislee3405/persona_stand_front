@@ -174,26 +174,50 @@ export function heroVars(c: HeroConfig): CSSProperties {
 }
 
 /* ───────────────────────── 2. Home page layout ─────────────────────
- * Scroll positioning for the single-page Home. */
+ * Scroll positioning for the single-page Home, plus the section list the
+ * navbar, the scroll-spy and the legacy redirect routes all read from. */
 
-/** Applied as `scroll-margin-top` on every anchored section so its heading
- *  clears the sticky navbar when scrolled to via `/#id`. Roughly navbar
- *  height + a little breathing room. */
-export const ANCHOR_OFFSET = { scrollMarginTop: '5.5rem' } as const;
+/** The sections of the single-page Home, in display order. THE list: the
+ *  navbar renders it, Home derives SECTION_IDS from it for the scroll-spy,
+ *  and App.tsx generates the legacy `/qualifications` -> `/#qualifications`
+ *  redirects from it. Previously three hand-maintained copies kept in sync
+ *  by a comment. Order is load-bearing -- the scroll-spy walks it top to
+ *  bottom and lights the last section whose top has passed the line. */
+export const SECTIONS = [
+  { id: 'about', label: 'About Me' },
+  { id: 'qualifications', label: 'Qualifications & Awards' },
+  { id: 'certifications', label: 'Certifications' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'journey', label: 'My Journey' },
+  { id: 'contact', label: 'Contact Me' },
+] as const;
+
+/** Just the ids, in the same order -- what the scroll-spy iterates. */
+export const SECTION_IDS = SECTIONS.map(s => s.id);
+
+/** Height of the sticky navbar (a custom `.bg-dark.sticky-top` bar: Bootstrap
+ *  `py-3` plus one row of nav pills). The three scroll constants below are all
+ *  measured from this, so changing the navbar's padding or font size only
+ *  needs this number updated -- previously each carried its own copy of "~72px"
+ *  in a comment and nothing tied them together. */
+export const NAVBAR_HEIGHT_REM = 4.5;
+
+/** Applied as `scroll-margin-top` on every anchored *text* section, so its
+ *  heading clears the navbar with a little breathing room above it. */
+export const ANCHOR_OFFSET = { scrollMarginTop: `${NAVBAR_HEIGHT_REM + 1}rem` } as const;
 
 /** Tighter offset for the full-bleed hero bands (About / Qualifications /
  *  Certifications with an image). They have no heading padding above the
- *  photo, so any breathing room reads as a white gap between the navbar
- *  and the image when the section is jumped to. Set a hair UNDER the
- *  ~72px navbar so the photo's top edge always meets the navbar with no
- *  gap -- the sliver that lands behind the opaque bar is imperceptible. */
-export const HERO_ANCHOR_OFFSET = { scrollMarginTop: '4.25rem' } as const;
+ *  photo, so breathing room reads as a white gap between the navbar and the
+ *  image when the section is jumped to. A hair UNDER the navbar, so the
+ *  photo's top edge always meets it -- the sliver that lands behind the
+ *  opaque bar is imperceptible. */
+export const HERO_ANCHOR_OFFSET = { scrollMarginTop: `${NAVBAR_HEIGHT_REM - 0.25}rem` } as const;
 
-/** Scroll-spy "you are here" line, px from the top of the viewport: a
- *  section lights up in the navbar once its top crosses this. Keep it a bit
- *  below the sticky navbar (~72px) so the switch happens as a heading
- *  tucks under it, not before it reaches it. */
-export const SCROLLSPY_LINE = 110;
+/** Scroll-spy "you are here" line, px from the top of the viewport: a section
+ *  lights up in the navbar once its top crosses this. Sits below the navbar so
+ *  the switch happens as a heading tucks under it, not before it reaches it. */
+export const SCROLLSPY_LINE = NAVBAR_HEIGHT_REM * 16 + 38;
 
 /* ───────────────────────── 3. Chatroom typing feel ────────────────
  * The persona's reply is revealed turn-by-turn on a delay, so it reads

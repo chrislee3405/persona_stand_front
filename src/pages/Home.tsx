@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router-dom';
 import Nav from 'react-bootstrap/Nav';
 import { useSiteContent, pickImage } from '../hooks/useSiteContent';
@@ -9,6 +8,8 @@ import { useActiveSection } from '../context/ActiveSectionContext';
 import { assetUrl } from '../lib/assetUrl';
 import Prose from '../components/Prose';
 import ProjectDots from '../components/ProjectDots';
+import SectionState from '../components/SectionState';
+import BottomSheet from '../components/BottomSheet';
 import ProjectSheet, { type ProjectSheetData } from './ProjectSheet';
 import githubIcon from '../assets/icons/github.png';
 import linkedinIcon from '../assets/icons/linkin.png';
@@ -22,19 +23,9 @@ import {
   ANCHOR_OFFSET,
   HERO_ANCHOR_OFFSET,
   SCROLLSPY_LINE,
+  SECTION_IDS,
 } from '../lib/knobs';
 import './Home.css';
-
-// Home-page scroll sections, top-to-bottom. Order MUST match the navbar's
-// SECTIONS list and the JSX below so the scroll-spy highlight stays in sync.
-const SECTION_IDS = [
-  'about',
-  'qualifications',
-  'certifications',
-  'projects',
-  'journey',
-  'contact',
-] as const;
 
 interface PersonalStatement {
   heading?: string;
@@ -168,11 +159,10 @@ function HeroBand({
 /**
  * Bottom "sheet" pop-up with the expanded story for one Journey block.
  * `detail` is the site_journey content; `block` supplies the year label and
- * the fallback title. Always mounted, portalled to <body>; `open` toggles a
- * class that slides the panel up from the bottom edge. Esc / the backdrop /
- * the close button dismiss it, and body scroll is locked while it is up.
- * The last block/detail stay rendered after close so the panel doesn't
- * blank as it slides away.
+ * the fallback title. The shell -- portal, backdrop, slide-up, Esc / close
+ * button, body-scroll lock and scroll-reset-on-open -- lives in
+ * <BottomSheet>; this component is only the content. The last block/detail
+ * stay rendered after close so the panel doesn't blank as it slides away.
  */
 function JourneySheet({
   open,
@@ -185,97 +175,64 @@ function JourneySheet({
   detail?: JourneyDetail;
   onClose: () => void;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
+  // Owned here (rather than inside BottomSheet) only so a future feature
+  // could measure this sheet's scroll area; BottomSheet attaches it and
+  // handles the reset-to-top on open.
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // The panel stays mounted between blocks, so .jsheet__scroll keeps the
-  // previous block's scroll position -- snap it back to the top on open.
-  useLayoutEffect(() => {
-    if (open && scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open, onClose]);
 
   const title = detail?.heading ?? block?.title ?? '';
   const highlights = (detail?.highlights ?? []).filter(Boolean);
   const links = (detail?.links ?? []).filter(l => l && l.href);
 
-  return createPortal(
-    <div className={`jsheet${open ? ' jsheet--open' : ''}`} aria-hidden={!open}>
-      <div className="jsheet__backdrop" onClick={onClose} />
-      <div
-        className="jsheet__panel"
-        ref={panelRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="jsheet-title"
-      >
-        <button
-          type="button"
-          className="sheet-close"
-          aria-label="Close"
-          onClick={onClose}
-        />
-        <div className="jsheet__bar">
-          <span className="jsheet__grip" aria-hidden="true" />
-        </div>
-        <div className="jsheet__scroll" ref={scrollRef}>
-          <div className="jsheet__head">
-            {block?.year && <span className="jsheet__year">{block.year}</span>}
-            <h2 id="jsheet-title" className="h4 mb-0">{title}</h2>
-          </div>
-          <div className="jsheet__body">
-            {detail?.subtitle && (
-              <p className="text-secondary fst-italic mb-3">{detail.subtitle}</p>
-            )}
-            <Prose text={detail?.body} />
-            {highlights.length > 0 && (
-              <ul className="mt-3">
-                {highlights.map((h, i) => (
-                  <li key={i} className="mb-2">{h}</li>
-                ))}
-              </ul>
-            )}
-            {links.length > 0 && (
-              <div className="d-flex flex-wrap gap-2 mt-4">
-                {links.map((l, i) =>
-                  /^https?:\/\//i.test(l.href) ? (
-                    <a
-                      key={i}
-                      className="btn btn-outline-primary btn-sm"
-                      href={l.href}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {l.label}
-                    </a>
-                  ) : (
-                    <NavLink key={i} className="btn btn-outline-primary btn-sm" to={l.href}>
-                      {l.label}
-                    </NavLink>
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+  return (
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      labelledBy="jsheet-title"
+      scrollRef={scrollRef}
+      panelClassName="jsheet__panel"
+      barClassName="jsheet__bar"
+      scrollClassName="jsheet__scroll"
+    >
+      <div className="jsheet__head">
+        {block?.year && <span className="jsheet__year">{block.year}</span>}
+        <h2 id="jsheet-title" className="h4 mb-0">{title}</h2>
       </div>
-    </div>,
-    document.body,
+      <div className="jsheet__body">
+        {detail?.subtitle && (
+          <p className="text-secondary fst-italic mb-3">{detail.subtitle}</p>
+        )}
+        <Prose text={detail?.body} />
+        {highlights.length > 0 && (
+          <ul className="mt-3">
+            {highlights.map((h, i) => (
+              <li key={i} className="mb-2">{h}</li>
+            ))}
+          </ul>
+        )}
+        {links.length > 0 && (
+          <div className="d-flex flex-wrap gap-2 mt-4">
+            {links.map((l, i) =>
+              /^https?:\/\//i.test(l.href) ? (
+                <a
+                  key={i}
+                  className="btn btn-outline-primary btn-sm"
+                  href={l.href}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {l.label}
+                </a>
+              ) : (
+                <NavLink key={i} className="btn btn-outline-primary btn-sm" to={l.href}>
+                  {l.label}
+                </NavLink>
+              ),
+            )}
+          </div>
+        )}
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -412,7 +369,12 @@ export default function Home() {
   const certImg = assetUrl(pickImage(images, 'certifications', 'banner'));
   const certCfg: HeroConfig = { ...CERT_HERO_DEFAULTS, ...statement.certHero };
 
-  const projectItems = (Array.isArray(content.projects) ? content.projects : []) as Project[];
+  // Memoized: projectMediaUrls depends on this, and a fresh array each
+  // render would make that memo recompute every time.
+  const projectItems = useMemo(
+    () => (Array.isArray(content.projects) ? content.projects : []) as Project[],
+    [content.projects],
+  );
   // Click-drag panning for the projects scroller (mouse only) -- pass the
   // count so the hook re-attaches once the scroller has actually rendered.
   useDragScroll(projScrollerRef, projectItems.length);
@@ -426,11 +388,9 @@ export default function Home() {
   // one that auto-plays -- already there. The rest stream on demand as the
   // viewer scrolls down to them. See useMediaPrefetch.
   const projectMediaUrls = useMemo(() => {
-    const projects = Array.isArray(content.projects) ? (content.projects as Project[]) : [];
-    const details = projectDetails as Record<string, ProjectDetail | undefined>;
     const out: string[] = [];
-    for (const p of projects) {
-      const first = details[p.id]?.videos?.[0];
+    for (const p of projectItems) {
+      const first = projectDetailMap[p.id]?.videos?.[0];
       if (!first) continue;
       const src = first.src_tag ? assetUrl(pickImage(images, 'projects', first.src_tag)) : undefined;
       const poster = first.poster_tag ? assetUrl(pickImage(images, 'projects', first.poster_tag)) : undefined;
@@ -438,7 +398,7 @@ export default function Home() {
       if (poster) out.push(poster);
     }
     return out;
-  }, [content, images, projectDetails]);
+  }, [projectItems, projectDetailMap, images]);
   useMediaPrefetch(projectMediaUrls);
   const openProjectSheet = (project: Project, detail: ProjectDetail) => {
     // Resolve video / poster tags to CDN URLs here so <ProjectSheet> stays
@@ -495,10 +455,7 @@ export default function Home() {
   const qualContent = (
     <>
       <h2 className="mb-4">Qualifications &amp; Awards</h2>
-      {loading && <p className="text-muted">Loading…</p>}
-      {!loading && qualifications.length === 0 && !qBody && (
-        <p className="text-muted">No qualifications content yet.</p>
-      )}
+      <SectionState loading={loading} empty={qualifications.length === 0 && !qBody} noun="qualifications" />
       {qBody && <Prose text={qBody} />}
       {qualifications.length > 0 && (
         <ul className="mb-0">
@@ -523,10 +480,7 @@ export default function Home() {
   const certContent = (
     <>
       <h2 className="mb-4">Certifications</h2>
-      {loading && <p className="text-muted">Loading…</p>}
-      {!loading && certifications.length === 0 && (
-        <p className="text-muted">No certifications content yet.</p>
-      )}
+      <SectionState loading={loading} empty={certifications.length === 0} noun="certifications" />
       {certifications.length > 0 && (
         <ul className="mb-0">
           {certifications.map(item => (
@@ -620,10 +574,7 @@ export default function Home() {
       <section id="projects" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
         <h2 className="mb-4">Projects</h2>
 
-        {loading && <p className="text-muted">Loading…</p>}
-        {!loading && projectItems.length === 0 && (
-          <p className="text-muted">No projects content yet.</p>
-        )}
+        <SectionState loading={loading} empty={projectItems.length === 0} noun="projects" />
 
         {projectItems.length > 0 && (
           <ul className="proj-scroller" role="list" ref={projScrollerRef}>
@@ -673,10 +624,7 @@ export default function Home() {
       <section id="journey" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
         <h2 className="mb-4">My Journey</h2>
 
-        {loading && <p className="text-muted">Loading…</p>}
-        {!loading && journey.length === 0 && (
-          <p className="text-muted">No journey content yet.</p>
-        )}
+        <SectionState loading={loading} empty={journey.length === 0} noun="journey" />
 
         {journey.length > 0 && (
           <ol className="jtl" role="list">
@@ -746,7 +694,11 @@ export default function Home() {
       <section id="contact" style={ANCHOR_OFFSET} className="my-5 pt-4 border-top">
         <h2 className="mb-4">Contact Me</h2>
 
-        {loading && <p className="text-muted">Loading…</p>}
+        <SectionState
+          loading={loading}
+          empty={!contact.intro && !contact.email && !contact.location && contactLinks.length === 0}
+          noun="contact"
+        />
         {contact.intro && <p className="lead text-secondary lh-base">{contact.intro}</p>}
 
         {(contact.email || contact.location) && (
@@ -797,9 +749,6 @@ export default function Home() {
           </div>
         )}
 
-        {!loading && !contact.intro && !contact.email && !contact.location && contactLinks.length === 0 && (
-          <p className="text-muted">No contact content yet.</p>
-        )}
       </section>
 
       {/* Trailing spacer -- height is set by the useLayoutEffect above so

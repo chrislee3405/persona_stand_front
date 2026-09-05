@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getJson, postJson } from '../lib/api';
 
 /**
  * Compulsory-consent gate. Checks the backend on mount, exposes the current
@@ -22,7 +23,7 @@ export function useConsent() {
   const [checkFailed, setCheckFailed] = useState(false);
 
   useEffect(() => {
-    fetch('/api/consent', { credentials: 'include' })
+    getJson('/api/consent')
       .then(res => res.json())
       .then(data => {
         setCheckFailed(false);
@@ -45,12 +46,7 @@ export function useConsent() {
     if (!consentText) return;
     setIsSubmittingConsent(true);
     try {
-      const response = await fetch('/api/consent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ conditionText: consentText })
-      });
+      const response = await postJson('/api/consent', { conditionText: consentText });
       if (response.ok) {
         setConsented(true);
       }

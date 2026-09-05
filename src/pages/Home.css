@@ -623,15 +623,16 @@ html {
   opacity: 1;
 }
 
-.jsheet__panel {
+/* Shared panel shell for BOTH bottom sheets (the markup shell itself lives
+   in components/BottomSheet.tsx). Everything that makes it "a sheet" -- the
+   anchoring, the column layout, the rounded top, the slide-up transform --
+   is declared once here; each sheet's own rule below sets only what it
+   genuinely differs on (width, height cap, and psheet's container query). */
+.jsheet__panel,
+.psheet__panel {
   position: absolute;
   left: 50%;
   bottom: 0;
-  /* narrower than the viewport, leaving a gutter on each side (>= 2rem on
-     small screens), capped at a comfortable reading width */
-  width: min(64rem, calc(100% - 4rem));
-  /* never taller than 4/5 of the screen; longer content scrolls inside */
-  max-height: 80vh;
   display: flex;
   flex-direction: column;
   /* visible (not hidden) so the corner close button can straddle the edge;
@@ -644,8 +645,17 @@ html {
   transform: translate(-50%, 100%);
   transition: transform 0.3s ease;
 }
-.jsheet--open .jsheet__panel {
+.jsheet--open .jsheet__panel,
+.jsheet--open .psheet__panel {
   transform: translate(-50%, 0);
+}
+
+.jsheet__panel {
+  /* narrower than the viewport, leaving a gutter on each side (>= 2rem on
+     small screens), capped at a comfortable reading width */
+  width: min(64rem, calc(100% - 4rem));
+  /* never taller than 4/5 of the screen; longer content scrolls inside */
+  max-height: 80vh;
 }
 .jsheet__panel:focus {
   outline: none;
@@ -949,10 +959,9 @@ html {
   --sheet-close-size: 2.5rem;
 }
 
+/* Only what the project sheet differs on -- the rest is the shared
+   .jsheet__panel/.psheet__panel rule near the journey sheet above. */
 .psheet__panel {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
   width: min(
     var(--psheet-max-width, 72rem),
     calc(100% - 2 * var(--psheet-side-gap, 1.5rem))
@@ -962,19 +971,6 @@ html {
      viewport, so it collapses whenever the video column would get narrower
      than the text column (see @container rule) */
   container: psheet / inline-size;
-  display: flex;
-  flex-direction: column;
-  /* visible (not hidden) so the corner close button can straddle the edge;
-     the rounded top corners still clip the panel's own background. */
-  overflow: visible;
-  background: var(--bs-body-bg, #fff);
-  border-radius: var(--sheet-radius, 1rem) var(--sheet-radius, 1rem) 0 0;
-  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.25);
-  transform: translate(-50%, 100%);
-  transition: transform 0.3s ease;
-}
-.jsheet--open .psheet__panel {
-  transform: translate(-50%, 0);
 }
 .psheet__panel:focus {
   outline: none;
