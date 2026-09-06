@@ -2,9 +2,53 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>persona_stand_front</title>
+
+    <title>Hang Chi Lee — Full-stack Engineer</title>
+
+    <!-- Tab / bookmark icon. Vite rewrites this src/ path to the hashed
+         build asset, so it does NOT need to live in public/. -->
+    <link rel="icon" type="image/png" href="/src/assets/icons/tab_logo.png" />
+    <link rel="apple-touch-icon" href="/src/assets/icons/tab_logo.png" />
+
+    <!-- Tints the browser chrome on Android/Chrome. Matches the navbar
+         exactly (both read the same charcoal -- see --brand-ink in
+         styles.css), so the bar and the page meet with no seam. -->
+    <meta name="theme-color" content="#283030" />
+
+    <!-- One sentence, ~155 chars max: it is what Google prints under the
+         title and what a link preview shows when there is no other copy.
+         REPLACE the wording once the real About copy is written -- keep it
+         first-person-free, concrete, and front-load what you do. -->
+    <meta
+      name="description"
+      content="Full-stack engineer working across cloud infrastructure and applied AI. Portfolio, project write-ups, and an AI persona you can ask about my work."
+    />
+
+    <!-- ---- Link preview (Open Graph + Twitter) ------------------------
+         What LinkedIn, WhatsApp, Slack and iMessage read when this URL is
+         pasted. Without these a shared link renders as a bare URL.
+
+         og:image must be an ABSOLUTE url -- a crawler has no page context
+         to resolve a relative one -- so it is served from the CDN like
+         every other image on this site rather than from public/. Upload
+         the card to S3 as `about_me/og_image.jpg`; 1200x630 is the size
+         every platform crops from. og:url is deliberately omitted until
+         there is a real domain (server_name is still a catch-all): a wrong
+         canonical url is worse than none, as crawlers fall back to the
+         URL they fetched. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Hang Chi Lee" />
+    <meta property="og:title" content="Hang Chi Lee — Full-stack Engineer" />
+    <meta
+      property="og:description"
+      content="Full-stack engineer working across cloud infrastructure and applied AI. Portfolio, project write-ups, and an AI persona you can ask about my work."
+    />
+    <meta property="og:image" content="%VITE_CDN_BASE%/about_me/og_image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Hang Chi Lee — portfolio and AI persona chat" />
+    <meta name="twitter:card" content="summary_large_image" />
 
     <!-- The About hero image is the first thing every visitor sees, but it's
          a CSS background set only after the JS bundle loads and
@@ -21,7 +65,7 @@
     <link
       rel="preload"
       as="image"
-      href="%VITE_CDN_BASE%/about_me/main_img.png"
+      href="%VITE_CDN_BASE%/about_me/main_img.jpg"
       fetchpriority="high"
     />
   </head>

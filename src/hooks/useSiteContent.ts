@@ -1,19 +1,47 @@
-import { useState, useEffect } from 'react';
+import { createContext, useContext } from 'react';
 
 /** One image slot for a section: a label plus the S3 object key.
  *  Internal to this module -- consumers use pickImage() / the `images` map. */
-interface SiteImage {
+export interface SiteImage {
   description: string;
   path: string;
 }
 
+/** Everything GET /api/site-content returns, plus the in-flight flag. */
+export interface SiteContentValue {
+  content: Record<string, unknown>;
+  images: Record<string, SiteImage[]>;
+  journeyDetails: Record<string, unknown>;
+  projectDetails: Record<string, unknown>;
+  loading: boolean;
+}
+
 /**
- * Loads the static website copy that used to be hardcoded in the pages
- * (personal statement, qualifications, certifications, journey, contact)
- * from the backend via GET /api/site-content, so it can change without a
- * frontend redeploy.
+ * Shared state for the site copy. The single fetch that fills it lives in
+ * <SiteContentProvider> (context/SiteContentProvider.tsx), mounted once at
+ * the app root -- so it survives route changes and every page reads the
+ * same already-loaded payload.
  *
- * One fetch on mount returns every section at once:
+ * The default below is what a consumer rendered OUTSIDE the provider sees:
+ * empty content and loading already finished, so it renders its normal
+ * "nothing here" state rather than hanging on a spinner that will never
+ * resolve.
+ */
+export const SiteContentContext = createContext<SiteContentValue>({
+  content: {},
+  images: {},
+  journeyDetails: {},
+  projectDetails: {},
+  loading: false,
+});
+
+/**
+ * Reads the static website copy that used to be hardcoded in the pages
+ * (personal statement, qualifications, certifications, journey, contact,
+ * chatroom) -- served from the backend so it can change without a frontend
+ * redeploy.
+ *
+ * One fetch, made once for the whole app, returns every section at once:
  *   {
  *     content: { "<section>": <json for that section>, ... },
  *     images:  { "<section>": [ { description, path }, ... ], ... },
@@ -28,42 +56,12 @@ interface SiteImage {
  * keyed by a journey block's / project's `id`. All are {} until the fetch
  * resolves (and stay {} if it fails), so pages must render a sensible
  * empty/loading state. Resolve an image `path` to a URL with assetUrl().
+ *
+ * This is a context read, not a fetch: calling it from another page costs
+ * nothing and returns whatever has already loaded.
  */
-export function useSiteContent() {
-  const [content, setContent] = useState<Record<string, unknown>>({});
-  const [images, setImages] = useState<Record<string, SiteImage[]>>({});
-  const [journeyDetails, setJourneyDetails] = useState<Record<string, unknown>>({});
-  const [projectDetails, setProjectDetails] = useState<Record<string, unknown>>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/site-content')
-      .then(res => res.json())
-      .then(data => {
-        if (cancelled) return;
-        setContent(data?.content && typeof data.content === 'object' ? data.content : {});
-        setImages(data?.images && typeof data.images === 'object' ? data.images : {});
-        setJourneyDetails(
-          data?.journeyDetails && typeof data.journeyDetails === 'object' ? data.journeyDetails : {},
-        );
-        setProjectDetails(
-          data?.projectDetails && typeof data.projectDetails === 'object' ? data.projectDetails : {},
-        );
-      })
-      .catch(error => {
-        console.error('Failed to load site content:', error);
-        if (!cancelled) {
-          setContent({}); setImages({}); setJourneyDetails({}); setProjectDetails({});
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  return { content, images, journeyDetails, projectDetails, loading };
+export function useSiteContent(): SiteContentValue {
+  return useContext(SiteContentContext);
 }
 
 /**

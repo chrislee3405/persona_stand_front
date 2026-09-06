@@ -5,9 +5,11 @@ import { SECTIONS } from './lib/knobs.ts'
 import Navbar from './components/navbar.tsx'
 import Footer from './components/footer.tsx'
 import ScrollToTop from './components/ScrollToTop.tsx'
+import ChatLauncher from './components/ChatLauncher.tsx'
 
 import { ChatProvider } from './context/ChatContext.tsx'
 import { ActiveSectionProvider } from './context/ActiveSectionContext.tsx'
+import { SiteContentProvider } from './context/SiteContentProvider.tsx'
 
 import Home from './pages/Home.tsx'
 import Chatroom from './pages/Chatroom.tsx'
@@ -59,6 +61,10 @@ function RootLayout() {
         <Outlet /> {/* <-- This is the window where the pages swap out! */}
       </div>
       <Footer />
+      {/* Outside the page container on purpose: it is position:fixed, and a
+          transformed/filtered ancestor would make it fixed to THAT box
+          instead of the viewport. Hides itself on /chatroom. */}
+      <ChatLauncher />
     </ActiveSectionProvider>
   )
 }
@@ -66,9 +72,14 @@ function RootLayout() {
 
 function App() {
   return (
-    <ChatProvider> 
-      <RouterProvider router={router} />
-    </ChatProvider> 
+    <ChatProvider>
+      {/* Outside RouterProvider so the site copy is fetched once per visit
+          and survives every route change -- pages read it from context
+          instead of each making their own request. */}
+      <SiteContentProvider>
+        <RouterProvider router={router} />
+      </SiteContentProvider>
+    </ChatProvider>
     )
 }
 

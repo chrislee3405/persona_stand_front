@@ -20,6 +20,178 @@ html {
   overflow-x: clip;
 }
 
+/* ===================================================================
+   Scroll reveal
+
+   Each Home section fades up from transparent the first time it is
+   scrolled to. Both classes are put on by useRevealOnScroll -- `reveal`
+   as it starts observing, `reveal--in` when the section reaches the
+   trigger line -- so a section is only ever hidden by a hook that is
+   definitely running and definitely going to reveal it again. Nothing
+   here applies on its own.
+
+   Opacity only, by design: the scroll-spy and the trailing spacer both
+   measure section geometry, so the sections must not move. See the note
+   in hooks/useRevealOnScroll.ts.
+   =================================================================== */
+:root {
+  /* how long a section takes to fade in -- the one knob for the feel */
+  --reveal-anim: 0.7s;
+  /* ditto for a single journey timeline row (see .jtl__item.reveal) */
+  --reveal-item-anim: 0.5s;
+}
+
+.reveal {
+  opacity: 0;
+  transition: opacity var(--reveal-anim, 0.7s) ease-out;
+  /* Not yet faded in means not yet clickable. A section or timeline row
+     waiting its turn still occupies its box, and the strip below the
+     trigger line is on screen -- without this, a journey card down there
+     could be clicked while invisible and open its pop-up. Focus order is
+     deliberately left alone: tabbing to something still hidden scrolls it
+     into view, which trips its reveal. */
+  pointer-events: none;
+}
+.reveal--in {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Belt and braces -- the hook already skips the observer under reduced
+   motion and strips both classes, so this only matters if the setting is
+   turned on while the page is open. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transition: none;
+  }
+}
+
+/* ---- About: name, then role, then bio ------------------------------
+   The name is the page's <h1> and the first thing read; the role sits
+   directly under it as a small tracked caps line -- the standard way to
+   pin a title to a name without competing with it for weight. Tight
+   margins keep the two reading as one block rather than two headings. */
+.about__name {
+  margin: 0 0 0.35rem;
+}
+.about__title {
+  margin: 0 0 1.1rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  /* the text-safe orange, not --brand-accent -- see styles.css */
+  color: var(--brand-accent-ink, #b35900);
+}
+
+/* ===================================================================
+   Social links (Contact)
+
+   The GitHub and LinkedIn marks are both the official black glyphs, but
+   they are different SHAPES -- a circle and a rounded square -- so side
+   by side at the same pixel height one always looks bigger and they read
+   as mismatched. Framing each in an identical square chip makes the
+   frame the shape, so the glyphs only have to agree on weight. The chip
+   is also a 2.75rem tap target, up from a 28px image.
+   =================================================================== */
+.social {
+  display: inline-grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 0.65rem;
+  background: var(--bs-body-bg, #fff);
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.social img {
+  width: 1.25rem;
+  height: 1.25rem;
+  /* `contain`, because the two source PNGs do not crop their glyph the
+     same way -- the LinkedIn file carries a baked-in (R) and the padding
+     that comes with it. */
+  object-fit: contain;
+}
+.social:hover,
+.social:focus-visible {
+  border-color: var(--brand-accent, #f08000);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1);
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .social { transition: none; }
+}
+
+/* ===================================================================
+   Credential list (Qualifications & Awards / Certifications)
+
+   One bordered row per credential instead of a bullet. Two things a
+   bullet list could not do: the year is pulled to the right of the
+   title, so dates form their own scannable column; and each entry has an
+   edge, so a reader sees "three records" before reading a word.
+
+   Sized to work inside a hero band's text column (~40rem) as well as a
+   full-width section, so it stays a single column and never grids.
+   =================================================================== */
+.cred {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.cred__item {
+  position: relative;
+  padding: 0.8rem 1rem 0.8rem 1.15rem;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 0.6rem;
+  background: var(--bs-body-bg, #fff);
+  overflow: hidden;   /* clips the accent bar to the rounded corners */
+}
+/* Brand accent as a shape, not as text -- the full-strength orange is
+   safe here (see --brand-accent vs --brand-accent-ink in styles.css). */
+.cred__item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--brand-accent, #f08000);
+}
+.cred__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.cred__title {
+  font-weight: 600;
+  line-height: 1.35;
+}
+.cred__year {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  font-weight: 600;
+  /* lines the digits up across rows, so the dates read as a column */
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-body, #4a5259);
+  white-space: nowrap;
+}
+.cred__org {
+  margin-top: 0.1rem;
+  font-size: 0.9rem;
+  color: var(--ink-body, #4a5259);
+}
+.cred__detail {
+  margin-top: 0.3rem;
+  font-size: 0.88rem;
+  color: var(--ink-body, #4a5259);
+}
+
 .hero-band {
   --_bg-size: var(--hero-bg-size, cover);
   --_h: var(--hero-h, 46vw);   /* vw so the band keeps its shape across same-ratio screens */
@@ -263,6 +435,8 @@ html {
   --jtl-gap: 4rem;                 /* space between the two columns (holds the line) */
   --jtl-pad: 1.25rem;              /* vertical padding per row */
   --jtl-point: 26px;              /* hexagon side-point depth */
+  --jtl-hover-anim: 0.2s;          /* lift + rim colour + dot swell, all in step */
+  --jtl-dot-hover-scale: 1.3;      /* how much the hovered row's dot grows */
   --jtl-accent: var(--bs-primary, #0d6efd);
   --jtl-card-bg: var(--bs-body-bg, #fff);
   --jtl-rule: var(--bs-border-color, #dee2e6);
@@ -294,6 +468,16 @@ html {
   transform: translateX(-50%);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--jtl-line-fade));
   mask-image: linear-gradient(to bottom, transparent 0, #000 var(--jtl-line-fade));
+}
+
+/* Each row fades in on its own as it's scrolled to (useRevealOnScroll,
+   driven off the block ids the <li>s already carry as anchors), inside the
+   whole-section fade. A shade quicker than a section: a row is a small
+   thing arriving, and at the section's pace a run of them reads as slow.
+   The rail (.jtl::before) is on the <ol>, not the rows, so it stays put
+   and the entries materialise along an already-drawn spine. */
+.jtl__item.reveal {
+  transition-duration: var(--reveal-item-anim, 0.5s);
 }
 
 /* one row */
@@ -340,6 +524,21 @@ html {
   box-shadow: 0 0 0 4px var(--jtl-card-bg);   /* punches through the line */
   transform: translate(-50%, -50%);
   z-index: 2;
+  transition: transform var(--jtl-hover-anim, 0.2s) ease;
+}
+
+/* Hovering a clickable card also swells ITS dot on the line, so the card
+   and its point on the timeline read as one thing. The dot is a sibling
+   *before* the card, which no sibling combinator can reach backwards, so
+   the row is matched instead and the dot found from there. Where :has()
+   is unsupported the dot simply doesn't grow -- the card still lifts and
+   its rim still turns accent. Keyboard focus gets the same treatment.
+   `.jtl__item--now` hides its dot entirely, so this is a no-op there. */
+.jtl__item:has(.jtl__card--btn:hover) .jtl__dot,
+.jtl__item:has(.jtl__card--btn:focus-visible) .jtl__dot {
+  /* translate first -- it's what centres the dot; scale after, so the
+     growth happens about that centre and the dot stays on the line */
+  transform: translate(-50%, -50%) scale(var(--jtl-dot-hover-scale, 1.3));
 }
 
 /* elongated hexagon: outer element = border, inner = fill */
@@ -359,10 +558,14 @@ html {
 }
 
 /* clickable card (block has a site_journey detail sheet): strip the native
-   <button> chrome so it looks identical to the plain card, then add a lift
-   on hover / focus. The rim (.jtl__card background) turns accent on
-   focus-visible -- an unclipped focus indicator (clip-path would eat an
-   outline). */
+   <button> chrome so it looks identical to the plain card, then react to
+   hover / focus on three fronts at once -- the card lifts, its rim
+   (.jtl__card background, the only "border" a clip-path shape can have)
+   fades from the grey rule to accent, and its dot on the line swells
+   (see .jtl__dot above).
+   The rim doubles as the focus indicator: clip-path would eat a real
+   outline, so focus-visible borrows the same accent rim rather than
+   drawing one. */
 .jtl__card--btn {
   display: block;
   width: 100%;
@@ -374,15 +577,29 @@ html {
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
-  transition: transform 0.15s ease, filter 0.15s ease;
+  /* background-color, not the `background` shorthand -- shorthands with
+     non-animatable parts (image, clip) don't interpolate */
+  transition:
+    transform var(--jtl-hover-anim, 0.2s) ease,
+    filter var(--jtl-hover-anim, 0.2s) ease,
+    background-color var(--jtl-hover-anim, 0.2s) ease;
 }
 .jtl__card--btn:hover,
 .jtl__card--btn:focus-visible {
   transform: translateY(-2px);
   filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.18));
+  background: var(--jtl-accent);
   outline: none;
 }
-.jtl__card--btn:focus-visible { background: var(--jtl-accent); }
+
+/* The hover states themselves still apply -- they carry meaning (this is
+   clickable, this is focused); only the easing between them is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .jtl__card--btn,
+  .jtl__dot {
+    transition: none;
+  }
+}
 
 /* "Read more ->" affordance inside a clickable card, aligned to the right */
 .jtl__more {
@@ -561,31 +778,55 @@ html {
     transform: translateX(calc(-50% - var(--arm)));
   }
 
-  /* last ("now") row: NOT aligned with the others -- shifted left so the
-     hexagon sits over the rail. No bent arm: the line runs straight down
-     into the hex and stops at its top edge. `--now-shift` = how far the
-     card overhangs left of the rail (raise it to push further left; the
-     section's 1rem gutter is the practical limit before the viewport edge). */
+  /* Last ("now") row.
+
+     It used to be pulled left by --now-shift so the hexagon straddled the
+     rail, the way it does on desktop. On a phone the rail is only 1.5rem
+     from the edge, so straddling drove the card's left point almost into
+     the viewport edge -- it broke the left alignment every other card
+     shares and read as a layout slip rather than emphasis.
+
+     So on narrow screens it lines up with the rest and keeps its arm; the
+     "now" state is carried by the accent rim and the badge, which is
+     plenty. The rail still stops here, but at the row's middle where the
+     arm meets it, so the timeline visibly terminates on this card. */
   .jtl__item--now {
     position: relative;
-    --now-shift: 1rem;
-    padding-left: 0;
+    padding-left: calc(var(--rail) + var(--arm));
   }
   .jtl__item--now:nth-child(odd)  .jtl__card,
   .jtl__item--now:nth-child(even) .jtl__card {
-    margin-left: calc(-1 * var(--now-shift));
+    justify-self: stretch;
+    margin-left: 0;
   }
-  .jtl__item--now .jtl__dot { display: none; }
+  /* arm restored (the desktop rule hides it) so the card is joined to the
+     rail exactly like the rows above it */
   .jtl__item--now:nth-child(odd)::after,
-  .jtl__item--now:nth-child(even)::after {   /* no arm */
-    display: none;
+  .jtl__item--now:nth-child(even)::after {
+    display: block;
+    position: static;
+    grid-row: 1;
+    grid-column: 1;
+    justify-self: start;
+    width: var(--arm);
+    transform: translateX(calc(-1 * var(--arm)));
   }
-  .jtl__item--now::before {                  /* stop the rail line at the hex top */
+  /* the terminating dot, a size up from the others -- this is the end of
+     the line, and the row has no dot of its own on desktop */
+  .jtl__item--now .jtl__dot {
+    display: block;
+    /* same placement as the dots above (grid item, nudged onto the rail) --
+       NOT the desktop translate(-50%,-50%) -- with a size bump on top */
+    transform: translateX(calc(-50% - var(--arm))) scale(1.25);
+  }
+  /* Mask the rail from the row's vertical middle downwards, so the line
+     ends ON the dot instead of running past the last card. */
+  .jtl__item--now::before {
     content: "";
     position: absolute;
     left: 0;
     width: calc(var(--rail) + var(--jtl-line));
-    top: var(--jtl-pad);
+    top: 50%;
     bottom: 0;
     background: var(--jtl-card-bg);
   }
@@ -599,6 +840,10 @@ html {
    toggles both. The panel is centred with a gutter on each side, capped at
    4/5 of the viewport height, and scrolls internally when the content is
    taller than that.
+
+   Both sheets stay MOUNTED when closed (the caller keeps the last item's
+   content in place), so open and close are pure class flips and the panel
+   plays the same slide in reverse on the way out.
    =================================================================== */
 .jsheet {
   position: fixed;
@@ -606,10 +851,17 @@ html {
   z-index: 1045;                 /* above the sticky navbar (1020) */
   visibility: hidden;
   pointer-events: none;
+  /* The layer must stay VISIBLE for as long as the panel is sliding away,
+     or the close would just blink out of existence. `visibility` isn't
+     interpolable, so it's stepped instead: held at `visible` for the length
+     of the slide (--sheet-anim), then flipped in one go. */
+  transition: visibility 0s linear var(--sheet-anim, 0.3s);
 }
 .jsheet--open {
   visibility: visible;
   pointer-events: auto;
+  /* opening is instant -- there's nothing to wait for */
+  transition: visibility 0s linear 0s;
 }
 
 .jsheet__backdrop {
@@ -617,7 +869,7 @@ html {
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
   opacity: 0;
-  transition: opacity 0.25s ease;
+  transition: opacity var(--sheet-anim, 0.3s) ease;
 }
 .jsheet--open .jsheet__backdrop {
   opacity: 1;
@@ -641,9 +893,10 @@ html {
   background: var(--bs-body-bg, #fff);
   border-radius: var(--sheet-radius, 1rem) var(--sheet-radius, 1rem) 0 0;
   box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.25);
-  /* translateX centres it; translateY drives the slide-up */
+  /* translateX centres it; translateY drives the slide -- up on open, and
+     the very same transition back down to 100% on close */
   transform: translate(-50%, 100%);
-  transition: transform 0.3s ease;
+  transition: transform var(--sheet-anim, 0.3s) ease;
 }
 .jsheet--open .jsheet__panel,
 .jsheet--open .psheet__panel {
@@ -663,7 +916,12 @@ html {
 
 @media (prefers-reduced-motion: reduce) {
   .jsheet__backdrop,
-  .jsheet__panel {
+  .jsheet__panel,
+  .psheet__panel {
+    transition: none;
+  }
+  /* nothing left to wait for on close, so don't hold the layer open */
+  .jsheet {
     transition: none;
   }
 }
@@ -948,7 +1206,11 @@ html {
    --sheet-radius       : sheet top-corner radius -- shared by BOTH the
                           journey and project pop-ups; also anchors the
                           circular corner close button (.sheet-close)
-   --sheet-close-size   : diameter of that close button */
+   --sheet-close-size   : diameter of that close button
+   --sheet-anim         : how long the slide takes, in EACH direction. The
+                          layer is kept visible for exactly this long on
+                          close, so keep the two in step by only editing
+                          here -- see .jsheet above. */
 :root {
   --psheet-max-width: 86rem;
   --psheet-side-gap: 1.5rem;
@@ -957,6 +1219,7 @@ html {
   --psheet-text-col: 34rem;
   --sheet-radius: 1rem;
   --sheet-close-size: 2.5rem;
+  --sheet-anim: 0.3s;
 }
 
 /* Only what the project sheet differs on -- the rest is the shared

@@ -4,11 +4,13 @@ import Nav from 'react-bootstrap/Nav';
 import { useSiteContent, pickImage } from '../hooks/useSiteContent';
 import { useMediaPrefetch } from '../hooks/useMediaPrefetch';
 import { useDragScroll } from '../hooks/useDragScroll';
+import { useRevealOnScroll } from '../hooks/useRevealOnScroll';
 import { useActiveSection } from '../context/ActiveSectionContext';
 import { assetUrl } from '../lib/assetUrl';
 import Prose from '../components/Prose';
 import ProjectDots from '../components/ProjectDots';
 import SectionState from '../components/SectionState';
+import CredentialList from '../components/CredentialList';
 import BottomSheet from '../components/BottomSheet';
 import ProjectSheet, { type ProjectSheetData } from './ProjectSheet';
 import githubIcon from '../assets/icons/github.png';
@@ -28,6 +30,14 @@ import {
 import './Home.css';
 
 interface PersonalStatement {
+  /** The site owner's name. Rendered as the page's one <h1>, above the
+   *  title -- so the About section opens "who", then "what", then the bio. */
+  owner?: string;
+  /** Professional title / role, e.g. "Full-stack Engineer". Shown under
+   *  the name. Superseded `heading`, which is still read as a fallback so
+   *  a database row written before the rename keeps rendering. */
+  title?: string;
+  /** @deprecated Use `title`. Only read when `title` is absent. */
   heading?: string;
   body?: string;
   cta?: { label: string; href: string };
@@ -338,6 +348,12 @@ export default function Home() {
     };
   }, [setActiveSection, loading]);
 
+  // Fade each section in from transparent as it's scrolled to. Keyed on
+  // `loading` for the same reason the scroll-spy is: content arriving
+  // swaps some sections' nodes (plain <section> -> <HeroBand>), so the
+  // observer has to be rebuilt against the new elements.
+  useRevealOnScroll(SECTION_IDS, loading);
+
   const statement = (content.personal_statement ?? {}) as PersonalStatement;
   const ctaLabel = statement.cta?.label ?? 'Chat with my virtual persona';
   const ctaHref = statement.cta?.href ?? '/chatroom';
@@ -426,7 +442,22 @@ export default function Home() {
     setProjectSheetOpen(true);
   };
 
-  const journey = (Array.isArray(content.journey) ? content.journey : []) as JourneyBlock[];
+  // Memoised so the empty fallback isn't a fresh [] on every render --
+  // that identity feeds journeyIds below, and through it the reveal
+  // observer's rebuild.
+  const journey = useMemo(
+    () => (Array.isArray(content.journey) ? content.journey : []) as JourneyBlock[],
+    [content.journey],
+  );
+  // Fade the timeline rows in one at a time as they're scrolled past, on
+  // top of the whole-section fade above. Each <li> already carries its
+  // block id as an anchor, so the same hook drives both; the rows are
+  // only styled to fade a little quicker (see .jtl__item.reveal).
+  // Memoised because the hook rebuilds its observer whenever this array's
+  // identity changes -- a fresh .map() every render would tear the
+  // observer down and set it up again on each one.
+  const journeyIds = useMemo(() => journey.map(b => b.id), [journey]);
+  useRevealOnScroll(journeyIds, loading);
   // Expanded copy per block, keyed by block id (site_journey table). A block
   // with an entry here gets a clickable card that opens the bottom sheet.
   const journeyDetailMap = journeyDetails as Record<string, JourneyDetail | undefined>;
@@ -438,14 +469,25 @@ export default function Home() {
   const contact = (content.contact ?? {}) as ContactInfo;
   const contactLinks = Array.isArray(contact.links) ? contact.links : [];
 
+  // `title` replaced `heading`; fall back so a row written before the
+  // rename still renders while the new one is being inserted.
+  const aboutTitle = statement.title ?? statement.heading;
+
   const aboutText = (
     <>
-      {statement.heading && <h2 className="mb-3">{statement.heading}</h2>}
+      {/* The owner's name is the page's only <h1> -- every section heading
+          is an <h2>, so the document outline had no top level before this. */}
+      {statement.owner && <h1 className="about__name">{statement.owner}</h1>}
+      {aboutTitle && <p className="about__title">{aboutTitle}</p>}
       <Prose text={statement.body} />
       {/* CTA: centred on phones (< sm), left-aligned from sm up. The .btn is
           inline-block, so text-align on this wrapper positions it. */}
       <div className="mt-4 text-center text-sm-start">
-        <button className="btn btn-primary btn-lg px-4 shadow-sm">
+        {/* data-chat-cta is the hook <ChatLauncher> watches: the floating
+            button stays hidden while this one is on screen, and takes over
+            as it scrolls away. Renaming the attribute breaks that handover
+            silently, so keep the two in step. */}
+        <button className="btn btn-primary btn-lg px-4 shadow-sm" data-chat-cta>
           <Nav.Link as={NavLink} to={ctaHref}>{ctaLabel}</Nav.Link>
         </button>
       </div>
@@ -457,23 +499,11 @@ export default function Home() {
       <h2 className="mb-4">Qualifications &amp; Awards</h2>
       <SectionState loading={loading} empty={qualifications.length === 0 && !qBody} noun="qualifications" />
       {qBody && <Prose text={qBody} />}
-      {qualifications.length > 0 && (
-        <ul className="mb-0">
-          {qualifications.map(item => (
-            <li key={item.id} className="mb-3">
-              <span className="fw-medium">{item.title}</span>
-              {(item.institution || item.year) && (
-                <div className="text-secondary">
-                  {item.institution && <em>{item.institution}</em>}
-                  {item.institution && item.year && ' · '}
-                  {item.year}
-                </div>
-              )}
-              {item.detail && <div className="text-secondary">{item.detail}</div>}
-            </li>
-          ))}
-        </ul>
-      )}
+      <CredentialList
+        items={qualifications.map(q => ({
+          id: q.id, title: q.title, org: q.institution, year: q.year, detail: q.detail,
+        }))}
+      />
     </>
   );
 
@@ -481,23 +511,11 @@ export default function Home() {
     <>
       <h2 className="mb-4">Certifications</h2>
       <SectionState loading={loading} empty={certifications.length === 0} noun="certifications" />
-      {certifications.length > 0 && (
-        <ul className="mb-0">
-          {certifications.map(item => (
-            <li key={item.id} className="mb-3">
-              <span className="fw-medium">{item.title}</span>
-              {(item.issuer || item.year) && (
-                <div className="text-secondary">
-                  {item.issuer && <em>{item.issuer}</em>}
-                  {item.issuer && item.year && ' · '}
-                  {item.year}
-                </div>
-              )}
-              {item.detail && <div className="text-secondary">{item.detail}</div>}
-            </li>
-          ))}
-        </ul>
-      )}
+      <CredentialList
+        items={certifications.map(c => ({
+          id: c.id, title: c.title, org: c.issuer, year: c.year, detail: c.detail,
+        }))}
+      />
     </>
   );
 
@@ -511,7 +529,7 @@ export default function Home() {
           imageSrc={heroSrc}
           cfg={aboutCfg}
           anchorStyle={HERO_ANCHOR_OFFSET}
-          ariaLabel={statement.heading ?? 'Portrait'}
+          ariaLabel={statement.owner ? `${statement.owner} — portrait` : 'Portrait'}
         >
           {aboutText}
         </HeroBand>
@@ -699,7 +717,7 @@ export default function Home() {
           empty={!contact.intro && !contact.email && !contact.location && contactLinks.length === 0}
           noun="contact"
         />
-        {contact.intro && <p className="lead text-secondary lh-base">{contact.intro}</p>}
+        {contact.intro && <p className="lead">{contact.intro}</p>}
 
         {(contact.email || contact.location) && (
           <dl className="row">
@@ -735,10 +753,15 @@ export default function Home() {
                   href={link.href}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-body-secondary d-inline-flex"
+                  className="social"
                   aria-label={link.label}
                 >
-                  <img src={icon} alt={link.label} width={28} height={28} />
+                  {/* alt="" -- the <a> already carries the name via
+                      aria-label, so a described image would say it twice.
+                      The marks are the official ones but have different
+                      silhouettes (GitHub a circle, LinkedIn a rounded
+                      square); the .social frame gives them a shared one. */}
+                  <img src={icon} alt="" aria-hidden="true" />
                 </a>
               ) : (
                 <a key={link.href} href={link.href} target="_blank" rel="noreferrer">

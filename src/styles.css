@@ -33,11 +33,208 @@
     'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   --bs-body-font-family: var(--bs-font-sans-serif);
 
-  /* Content text -- smaller than the rem base so body copy stays compact
-     and headings (sized separately below) stand out. Fluid: ~13px on
-     phones, ~unchanged on tablet/desktop (~14.9px). Bootstrap's `body`
-     reads this var. */
-  --bs-body-font-size: clamp(0.8125rem, 0.77rem + 0.18vw, 0.9rem);
+  /* Content text. ~15.6px on phones, ~17px on desktop -- a normal reading
+     size. It was previously capped at ~14.9px, which is below what reads
+     as considered on a desktop site; the heading scale below came down to
+     match so the jump from body to h2 stays a hierarchy, not a chasm.
+     Bootstrap's `body` reads this var. */
+  --bs-body-font-size: clamp(0.97rem, 0.93rem + 0.19vw, 1.03rem);
+
+  /* ---- Brand ------------------------------------------------------
+     Sampled from assets/icons/tab_logo.png -- the two colours actually
+     in the mark, so the chrome, the tab icon and the browser theme all
+     agree instead of each picking their own dark.
+       --brand-ink    charcoal: the navbar, and the `theme-color` meta in
+                      index.html (keep those two in step -- a mismatch
+                      shows as a seam above the bar on Android)
+       --brand-accent orange: reserved. Nothing uses it yet; it is here so
+                      there is one place to start from when the palette
+                      moves off Bootstrap's default blue. */
+  --brand-ink: #283030;
+  --brand-accent: #f08000;
+  /* The same orange, darkened until it passes AA as TEXT on white
+     (#f08000 is only 2.7:1 -- fine for a fill or a rule, not for words).
+     Use --brand-accent for shapes, --brand-accent-ink for type. */
+  --brand-accent-ink: #b35900;
+  /* Tints of the accent, for fills that sit UNDER text (a badge, a hover
+     wash). Mixed from the accent so they move with it if it changes. */
+  --brand-accent-soft: #fdf1e3;
+  --brand-accent-line: #f6c894;
+  /* Charcoal, lightened one step -- for a hover/pressed state on the
+     navbar and anywhere --brand-ink needs a second level. */
+  --brand-ink-2: #3a4544;
+
+  /* ---- Bootstrap re-point -----------------------------------------
+     Bootstrap's blue drove every button, link, focus ring and the
+     timeline accent, so the page and the logo shared no colour at all.
+     Overriding these three variables moves the whole framework onto the
+     brand orange in one place, instead of hunting `.btn-primary` &co.
+     `--bs-primary-rgb` is the one components actually read for tints. */
+  --bs-primary: #b35900;
+  --bs-primary-rgb: 179, 89, 0;
+  --bs-link-color: #b35900;
+  --bs-link-color-rgb: 179, 89, 0;
+  --bs-link-hover-color: #8f4700;
+  --bs-link-hover-color-rgb: 143, 71, 0;
+
+  /* Reading ink for content paragraphs (.lead). Bootstrap's muted grey
+     (#6c757d) sits at 4.7:1 on white -- a bare AA pass, and it was being
+     used for the About pitch, i.e. the most important copy on the site.
+     This is 8:1: still clearly softer than a heading, but no longer
+     "de-emphasised". */
+  --ink-body: #4a5259;
+}
+
+/* Bootstrap compiles the blue INTO these components rather than reading
+   --bs-primary at runtime, so re-pointing the variable above is not
+   enough for them. Each component exposes its own `--bs-*` knobs, which
+   is what these set -- no `!important`, no selector surgery.
+
+   Anything in the app's own CSS that already says
+   `var(--bs-primary, #0d6efd)` (the timeline accent, the project dots,
+   focus outlines) follows the variable and needs nothing here. */
+.btn-primary {
+  --bs-btn-bg: var(--brand-accent-ink);
+  --bs-btn-border-color: var(--brand-accent-ink);
+  --bs-btn-hover-bg: #8f4700;
+  --bs-btn-hover-border-color: #8f4700;
+  --bs-btn-active-bg: #7a3d00;
+  --bs-btn-active-border-color: #7a3d00;
+  --bs-btn-disabled-bg: var(--brand-accent-ink);
+  --bs-btn-disabled-border-color: var(--brand-accent-ink);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--brand-accent-ink);
+  --bs-btn-border-color: var(--brand-accent-ink);
+  --bs-btn-hover-bg: var(--brand-accent-ink);
+  --bs-btn-hover-border-color: var(--brand-accent-ink);
+  --bs-btn-active-bg: #8f4700;
+  --bs-btn-active-border-color: #8f4700;
+  --bs-btn-disabled-color: var(--brand-accent-ink);
+  --bs-btn-disabled-border-color: var(--brand-accent-ink);
+}
+/* The navbar pill. Full-strength accent is right here -- it is a fill
+   with white on it, not orange type on white. */
+.nav-pills {
+  --bs-nav-pills-link-active-bg: var(--brand-accent-ink);
+}
+/* Keyboard focus ring, so it matches too instead of staying blue. */
+:root {
+  --bs-focus-ring-color: rgba(240, 128, 8, 0.35);
+}
+
+/* ===================================================================
+   Floating chat launcher (components/ChatLauncher.tsx)
+
+   Fixed to the bottom-right corner, so it stays put through any amount of
+   scrolling. Lives here rather than in Home.css because RootLayout puts
+   it on every route, not just Home.
+
+   z-index 1030 is deliberate and sits in a gap in the existing ladder:
+   above the sticky navbar (1020) so it never slides under the bar, but
+   BELOW the bottom sheets (1045) and the consent dialog (1050) -- a
+   button that floated over an open modal, still clickable, would be a
+   bug. Their backdrops cover it and swallow the clicks.
+   =================================================================== */
+.chat-launcher {
+  position: fixed;
+  right: 1.25rem;
+  /* env() keeps it clear of the iOS home indicator; the fallback is what
+     every other browser uses. */
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  z-index: 1030;
+
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  /* The raw logo orange -- the exact colour in tab_logo.png, so the
+     launcher and the tab icon are the same orange.
+
+     NOTE: white on #f08000 is 2.69:1, below the 3:1 WCAG minimum for a
+     meaningful graphical object. It is legible, but it is the softest
+     mark on the site. Two ways out if it ever bothers you: drop to
+     --brand-accent-ink (#b35900, 4.83:1), or keep this orange and make
+     the glyph charcoal instead of white (4.98:1) -- the glyph is
+     monochrome, so a CSS mask can recolour it with no new asset. */
+  background: var(--brand-accent, #f08000);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+
+  /* `translate` and `scale` as their own properties, not packed into
+     `transform`. That is what makes the handover read as liquid rather
+     than as a box sliding: they are given DIFFERENT durations and
+     easings, so the blob is still stretching after it has arrived, and
+     settles late. One combined `transform` can only ease as a single
+     rigid unit. It also leaves `transform` free for the hover lift,
+     which then composes instead of fighting (the engine applies
+     translate, then scale, then transform). */
+  translate: 0 0;
+  scale: 1 1;
+  transition:
+    translate 0.46s cubic-bezier(0.22, 1, 0.36, 1),
+    scale 0.62s cubic-bezier(0.34, 1.55, 0.5, 1),   /* overshoots, then settles */
+    opacity 0.3s ease,
+    visibility 0s linear 0s,
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+.chat-launcher img {
+  display: block;
+  /* Padding inside the circle. The glyph is the robot alone, so it needs
+     more breathing room than a full-bleed disc would. */
+  width: 62%;
+  height: 62%;
+  /* `contain`: the source is 291x304, so it is not quite square and would
+     distort under `fill`. */
+  object-fit: contain;
+}
+.chat-launcher:hover,
+.chat-launcher:focus-visible {
+  transform: translateY(-3px);
+  /* one step down from #f08000 -- .btn-primary's #8f4700 would be too big
+     a jump from a base this bright */
+  background: #d97300;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
+}
+.chat-launcher:focus-visible {
+  /* charcoal ring, not orange -- an orange ring on an orange button is
+     invisible */
+  outline: 3px solid var(--brand-ink, #283030);
+  outline-offset: 3px;
+}
+
+/* ---- Hidden: the CTA has the floor ---------------------------------
+   Not `display:none` -- there would be nothing to animate. The button
+   waits as a flattened blob, pulled up and left toward where the CTA
+   sits, so releasing it looks like that button flowing down into this
+   one. Listed AFTER :hover so it wins the transform/scale it shares
+   with it (unreachable anyway -- pointer-events are off).
+
+   `visibility` is stepped, held `visible` for the length of the exit and
+   flipped in one go at the end, exactly as the bottom sheets do it --
+   otherwise the blob would vanish on frame one instead of flowing out. */
+.chat-launcher.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  translate: -26px -10px;
+  scale: 2.15 0.6;
+  transition:
+    translate 0.4s cubic-bezier(0.5, 0, 0.75, 0),
+    scale 0.4s cubic-bezier(0.5, 0, 0.75, 0),
+    opacity 0.28s ease,
+    visibility 0s linear 0.4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-launcher,
+  .chat-launcher.is-hidden { transition: none; }
+  .chat-launcher:hover,
+  .chat-launcher:focus-visible { transform: none; }
+  /* no morph to wait for, so nothing to stretch or hold visible */
+  .chat-launcher.is-hidden { translate: 0 0; scale: 1 1; }
 }
 
 html {
@@ -59,12 +256,24 @@ html {
    These win over Bootstrap's `h1, .h1 { }` rules (same selectors, loaded
    later). Component styles that give a heading its own size (e.g.
    .psheet__h) keep winning on specificity. */
-h1, .h1 { font-size: clamp(1.9rem, 1.55rem + 1.75vw, 2.75rem); }
-h2, .h2 { font-size: clamp(1.6rem, 1.35rem + 1.2vw, 2.25rem); }
-h3, .h3 { font-size: clamp(1.35rem, 1.2rem + 0.7vw, 1.75rem); }
-h4, .h4 { font-size: clamp(1.2rem, 1.1rem + 0.45vw, 1.5rem); }
-h5, .h5 { font-size: clamp(1.05rem, 1rem + 0.25vw, 1.25rem); }
+h1, .h1 { font-size: clamp(1.65rem, 1.4rem + 1.1vw, 2.2rem); }
+h2, .h2 { font-size: clamp(1.4rem, 1.22rem + 0.8vw, 1.75rem); }
+h3, .h3 { font-size: clamp(1.2rem, 1.1rem + 0.45vw, 1.4rem); }
+h4, .h4 { font-size: clamp(1.1rem, 1.05rem + 0.25vw, 1.2rem); }
+h5, .h5 { font-size: clamp(1rem, 0.98rem + 0.12vw, 1.05rem); }
 h6, .h6 { font-size: 1rem; }
+
+/* Headings are set tight and a touch heavier than Bootstrap's default:
+   at these sizes the default 1.2 leading and 500 weight read soft. */
+h1, .h1, h2, .h2, h3, .h3 {
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+h4, .h4, h5, .h5 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
 
 /* `.lead` is the shared "content paragraph" size: the About statement, the
    Qualifications / Certifications blurbs, the Journey cards + detail sheet,
@@ -73,16 +282,62 @@ h6, .h6 { font-size: 1rem; }
    the compact body, so bring it down to one emphasised-paragraph size --
    and step it down again on phones so every one of those places matches
    the About section. Per-place rules must NOT re-set `font-size`. */
-.lead { font-size: clamp(1.05rem, 1rem + 0.35vw, 1.25rem); }
+.lead {
+  font-size: clamp(1.02rem, 0.98rem + 0.22vw, 1.12rem);
+  line-height: 1.65;
+  /* ~70 characters is the comfortable reading column. Only bites in the
+     full-width sections (Contact); the hero band, journey cards and the
+     sheets are all already narrower than this. */
+  max-width: 68ch;
+  /* Colour lives here rather than on a `text-secondary` class in the
+     markup, so every content paragraph gets one legible reading ink from
+     one place -- see --ink-body. */
+  color: var(--ink-body);
+}
 @media (max-width: 575.98px) {
-  .lead { font-size: 0.875rem; line-height: 1.5; }
+  .lead { font-size: 0.95rem; line-height: 1.55; }
 }
 
 /* Keep the navbar text at the rem base -- it's chrome, not content. The
    app's navbar is a custom sticky bar (no Bootstrap `.navbar` class), and
-   its `.nav-link`s inherit the shrunk --bs-body-font-size otherwise. */
+   its `.nav-link`s inherit the shrunk --bs-body-font-size otherwise.
+
+   The background is repainted in the brand charcoal so the bar, the tab
+   icon and the mobile browser chrome (`theme-color`) are all one colour.
+   `!important` because Bootstrap's `.bg-dark` utility carries it too. */
 .sticky-top.bg-dark {
   font-size: 1rem;
+  background-color: var(--brand-ink) !important;
+
+  --bs-dropdown-link-active-bg: var(--brand-accent-ink);
+  --bs-dropdown-link-hover-bg: rgba(240, 128, 8, 0.12);
+}
+
+/* The bar carries data-bs-theme="dark", which re-declares Bootstrap's link
+   colours on that subtree -- so the :root re-point above never reached it
+   and the nav stayed Bootstrap blue while everything else turned orange.
+
+   These have to land on `.nav` itself, not on the bar: Bootstrap declares
+   `--bs-nav-link-color: var(--bs-link-color)` ON `.nav`, so a value
+   inherited from the parent is shadowed before a link ever reads it.
+
+   Light neutral rather than orange -- orange type on charcoal is muddy,
+   and the accent is better spent on the single active pill. #d5dbda on
+   #283030 is 9.6:1. */
+.sticky-top.bg-dark .nav {
+  --bs-nav-link-color: #d5dbda;
+  --bs-nav-link-hover-color: #ffffff;
+}
+/* The collapsed "Menu" toggle is a .nav-link too, but NavDropdown renders
+   it as an <a> that reads --bs-nav-link-color only on hover in some
+   states; pin both so it never falls back to the theme blue. */
+.sticky-top.bg-dark .dropdown-toggle.nav-link {
+  color: #d5dbda;
+}
+.sticky-top.bg-dark .dropdown-toggle.nav-link:hover,
+.sticky-top.bg-dark .dropdown-toggle.nav-link:focus,
+.sticky-top.bg-dark .dropdown-toggle.nav-link.show {
+  color: #ffffff;
 }
 
 /* ---- Wide monitors -------------------------------------------------

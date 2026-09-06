@@ -4,12 +4,27 @@ import { useChat } from '../context/ChatContext';
 import { useConsent } from '../hooks/useConsent';
 import { useInviteCode } from '../hooks/useInviteCode';
 import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
+import { useSiteContent } from '../hooks/useSiteContent';
 import { assetUrl } from '../lib/assetUrl';
-import wallpaper from '../assets/icons/chatroom_wallpaper.png';
+import wallpaper from '../assets/icons/chatroom_wallpaper.jpg';
 import './Chatroom.css';
 
 // Header avatar -- a fixed object in the CDN bucket (not a site_image row).
 const AVATAR_URL = assetUrl('about_me/icon.png');
+
+/** site_content section "chatroom" -- header copy for this page. */
+interface ChatroomContent {
+  /** Persona display name in the header. See PERSONA_NAME_FALLBACK. */
+  name?: string;
+}
+
+/**
+ * Last resort for the header name: no `chatroom` row, no
+ * personal_statement `owner`, or the content fetch failed outright.
+ * Deliberately not a person's name -- inventing one would be worse than
+ * being generic.
+ */
+const PERSONA_NAME_FALLBACK = 'AI Persona';
 
 // Shown only if the GET /api/consent response has no conditionText at all
 // (e.g. consent_policy is somehow empty) -- should be rare in practice
@@ -19,6 +34,21 @@ const CONSENT_TEXT_UNAVAILABLE = "Consent terms are currently unavailable. Pleas
 export default function Chatroom() {
   // The running message list (persisted in ChatContext across refreshes).
   const { messages } = useChat();
+
+  // Header name, from site_content section "chatroom". Falls back to the
+  // site owner's name, so a deployment that never adds a chatroom row
+  // still gets the right name rather than a placeholder.
+  //
+  // While the fetch is in flight the name renders EMPTY rather than as
+  // the fallback: showing a generic label and then swapping it for the
+  // real name is a visible flash of the wrong thing. The header keeps its
+  // height regardless -- the avatar is a fixed 2.5rem.
+  const { content, loading: contentLoading } = useSiteContent();
+  const chatroomContent = (content.chatroom ?? {}) as ChatroomContent;
+  const owner = (content.personal_statement as { owner?: string } | undefined)?.owner;
+  const personaName = contentLoading
+    ? ''
+    : chatroomContent.name ?? owner ?? PERSONA_NAME_FALLBACK;
 
   // Invite-code verification: the code/input values, the in-flight flag, the
   // submit handler for the code form, and isVerified (also handed to
@@ -36,6 +66,14 @@ export default function Chatroom() {
   // back, and keep coming back, until "I Agree" is clicked.
   const [consentDismissed, setConsentDismissed] = useState(false);
   const showConsent = consented === false && !consentDismissed;
+  // No policy text came back, so the card is showing CONSENT_TEXT_UNAVAILABLE.
+  // Both buttons go inert in that state (agreeing to terms nobody can read
+  // is not consent) and a close button appears instead -- see the dialog.
+  const termsUnavailable = !consentText;
+
+  // Invite-code strip starts collapsed behind a link -- see the note at
+  // the markup below.
+  const [codeOpen, setCodeOpen] = useState(false);
 
   // Force the terms popup back on screen: clear the dismissal and make sure
   // the consent flag is false. Wired to useChatDispatch (fires on a send with
@@ -123,14 +161,34 @@ export default function Chatroom() {
           "I Agree" is clicked. */}
       {showConsent && (
         <div className="chatroom-consent">
-          <div className="chatroom-consent__card">
-            <p className="chatroom-consent__text">{consentText ?? CONSENT_TEXT_UNAVAILABLE}</p>
+          <div
+            className="chatroom-consent__card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chatroom-consent-text"
+          >
+            {/* No terms to read means there is nothing to agree OR object
+                to, so both choices go dead and the only honest control is
+                "close" -- offered here, and only here. When the terms do
+                load this button is absent: leaving the gate is then a
+                decision ("I Don't Agree"), not a dismissal. */}
+            {termsUnavailable && (
+              <button
+                type="button"
+                className="chatroom-consent__exit"
+                aria-label="Close"
+                onClick={() => setConsentDismissed(true)}
+              />
+            )}
+            <p className="chatroom-consent__text" id="chatroom-consent-text">
+              {consentText ?? CONSENT_TEXT_UNAVAILABLE}
+            </p>
             <div className="chatroom-consent__actions">
               <button
                 type="button"
                 className="chatroom-consent__agree"
                 onClick={agreeConsent}
-                disabled={isSubmittingConsent || !consentText}
+                disabled={isSubmittingConsent || termsUnavailable}
               >
                 {isSubmittingConsent ? 'Submitting…' : 'I Agree'}
               </button>
@@ -138,7 +196,7 @@ export default function Chatroom() {
                 type="button"
                 className="chatroom-consent__decline"
                 onClick={() => setConsentDismissed(true)}
-                disabled={isSubmittingConsent}
+                disabled={isSubmittingConsent || termsUnavailable}
               >
                 I Don't Agree
               </button>
@@ -160,7 +218,7 @@ export default function Chatroom() {
           <span className="chatroom__avatar" aria-hidden="true">P</span>
         )}
         <div>
-          <div className="chatroom__title">Virtual Persona</div>
+          <div className="chatroom__title">{personaName}</div>
           <div
             className={`chatroom__status${offline && !isAwaitingReply ? ' chatroom__status--offline' : ''}`}
           >
@@ -169,10 +227,24 @@ export default function Chatroom() {
         </div>
       </header>
 
-      {/* Invite-code strip */}
+      {/* Invite-code strip -- collapsed by default. It is a back-door for
+          the few people who hold a code, but as an always-open field it
+          was the first thing every visitor met, which made the page look
+          gated. It opens on request, and stays open by itself once there
+          is something to show: a verified code, or an error to read. */}
+      {!codeOpen && !isVerified && !codeError && (
+        <button
+          type="button"
+          className="chatroom__code-toggle"
+          onClick={() => setCodeOpen(true)}
+        >
+          Have an invite code?
+        </button>
+      )}
       <form
         className={`chatroom__code${isVerified ? ' chatroom__code--ok' : ''}`}
         onSubmit={verifyCode}
+        hidden={!codeOpen && !isVerified && !codeError}
       >
         <input
           type="text"
