@@ -486,7 +486,7 @@ span.chatroom__avatar {
 /* ===================================================================
    Send button + dispatch animation
 
-   A solid blue circle with a white V-shaped (paper-plane) mark. The two
+   A solid brand-orange circle with a white V-shaped (paper-plane) mark. The two
    white blades straighten as the message is "flung" right, disappear off
    the circle's edge, then wrap back in from the left and settle to the
    resting pose. Driven by the `.is-sending` class, added on submit and
@@ -495,7 +495,10 @@ span.chatroom__avatar {
    animationend never fires).
    =================================================================== */
 .send-btn {
-  --send-circle: var(--bs-primary, #0d6efd);   /* the blue disc (matches the app's primary buttons) */
+  /* The disc. Follows --bs-primary, which styles.css re-points to the
+     brand orange -- so this tracks the app's primary buttons. The
+     literal fallback is only for a context where that var is unset. */
+  --send-circle: var(--bs-primary, #b35900);
   --send-duration: 1s;          /* snappier: 0.7s -- slower: 1.3s */
 
   appearance: none;
@@ -514,7 +517,10 @@ span.chatroom__avatar {
   transition: background-color 0.15s ease;
 }
 .send-btn:hover {
-  background: #0b5ed7;
+  background: #8f4700;   /* darker brand orange -- matches .btn-primary hover */
+}
+.send-btn:active {
+  background: #7a3d00;   /* pressed -- matches .btn-primary active */
 }
 .send-btn:focus-visible {
   outline: 2px solid var(--send-circle);

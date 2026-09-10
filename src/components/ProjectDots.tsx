@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { rafThrottle } from '../lib/rafThrottle';
 
 /**
  * A minimap for the horizontal projects scroller: one dot per project, with
@@ -73,16 +74,22 @@ export default function ProjectDots({
       positionWindow(first, last);
     };
 
+    // One getBoundingClientRect per project plus one on the container,
+    // then a style write on the window outline -- a read-write-read cycle,
+    // previously run on every scroll event. Drag-panning fires those
+    // continuously.
+    const onScroll = rafThrottle(recompute);
     recompute();
-    scroller.addEventListener('scroll', recompute, { passive: true });
-    const ro = new ResizeObserver(recompute);
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    const ro = new ResizeObserver(onScroll);
     ro.observe(scroller);
     if (dotsRef.current) ro.observe(dotsRef.current);
-    window.addEventListener('resize', recompute);
+    window.addEventListener('resize', onScroll);
     return () => {
-      scroller.removeEventListener('scroll', recompute);
+      onScroll.cancel();
+      scroller.removeEventListener('scroll', onScroll);
       ro.disconnect();
-      window.removeEventListener('resize', recompute);
+      window.removeEventListener('resize', onScroll);
     };
   }, [scrollerRef, count]);
 

@@ -17,6 +17,12 @@
     "jsx": "react-jsx",
 
     /* Linting */
+    /* The codebase was already fully strict-clean -- `tsc --strict` reported
+       0 errors before this line existed, and there is no `any` in src/. The
+       flag was simply never set, so nothing stopped the next change from
+       introducing an implicit any or an unchecked null. Turning it on is a
+       zero-diff change today and a guard from here on. */
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,

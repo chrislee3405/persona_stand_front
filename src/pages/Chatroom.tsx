@@ -1,11 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BaseSyntheticEvent, KeyboardEvent } from 'react';
 import { useChat } from '../context/ChatContext';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useConsent } from '../hooks/useConsent';
 import { useInviteCode } from '../hooks/useInviteCode';
 import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
 import { useSiteContent } from '../hooks/useSiteContent';
 import { assetUrl } from '../lib/assetUrl';
+import { markChatVisited } from '../lib/chatVisited';
 import wallpaper from '../assets/icons/chatroom_wallpaper.jpg';
 import './Chatroom.css';
 
@@ -75,6 +77,17 @@ export default function Chatroom() {
   // the markup below.
   const [codeOpen, setCodeOpen] = useState(false);
 
+  // The consent card is a real modal now. It declared role="dialog"
+  // aria-modal="true" and did neither of the things that makes true: focus
+  // stayed on <body> when it opened, so a keyboard user had to tab through
+  // the navbar, the invite-code toggle and the composer to reach "I Agree"
+  // -- and could type and press Send with the gate on screen. Esc dismisses
+  // it, which is the same decision as "I Don't Agree": the visitor may read
+  // the room, and any send attempt brings it straight back.
+  const consentCardRef = useRef<HTMLDivElement>(null);
+  const dismissConsent = useCallback(() => setConsentDismissed(true), []);
+  useFocusTrap(consentCardRef, showConsent, dismissConsent);
+
   // Force the terms popup back on screen: clear the dismissal and make sure
   // the consent flag is false. Wired to useChatDispatch (fires on a send with
   // no consent, and on an HTTP 403) and used directly by onSubmit.
@@ -87,7 +100,7 @@ export default function Chatroom() {
   // change handler, the send handler (rapid-fire fragment batching lives in
   // here), the warning-banner text, and the ids of bubbles the backend
   // refused (rendered as red dialog boxes below).
-  const { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, withheldIds, isAwaitingReply, isOffline } = useChatDispatch({
+  const { inputMessage, handleInputChange, handleSend, warningMessage, isAwaitingReply, isOffline } = useChatDispatch({
     consented,
     isVerified,
     onConsentRequired: requireConsent,
@@ -100,6 +113,15 @@ export default function Chatroom() {
 
   // Falls back to a monogram if the CDN avatar is missing / not public.
   const [avatarBroken, setAvatarBroken] = useState(false);
+
+  // Remember that this visitor has been here, so <ChatLauncher> stops
+  // playing its one-off "try the chat" introduction. Recorded on arrival
+  // rather than on a first message: having seen the room is enough to
+  // know what the button does. Deliberately unconditional -- it must fire
+  // even if the consent gate is never passed.
+  useEffect(() => {
+    markChatVisited();
+  }, []);
 
   // Auto-stick to the bottom as new bubbles (and the notice) arrive.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -163,6 +185,8 @@ export default function Chatroom() {
         <div className="chatroom-consent">
           <div
             className="chatroom-consent__card"
+            ref={consentCardRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-labelledby="chatroom-consent-text"
@@ -177,7 +201,7 @@ export default function Chatroom() {
                 type="button"
                 className="chatroom-consent__exit"
                 aria-label="Close"
-                onClick={() => setConsentDismissed(true)}
+                onClick={dismissConsent}
               />
             )}
             <p className="chatroom-consent__text" id="chatroom-consent-text">
@@ -195,7 +219,7 @@ export default function Chatroom() {
               <button
                 type="button"
                 className="chatroom-consent__decline"
-                onClick={() => setConsentDismissed(true)}
+                onClick={dismissConsent}
                 disabled={isSubmittingConsent || termsUnavailable}
               >
                 I Don't Agree
@@ -222,7 +246,11 @@ export default function Chatroom() {
           <div
             className={`chatroom__status${offline && !isAwaitingReply ? ' chatroom__status--offline' : ''}`}
           >
-            {isAwaitingReply ? 'Typing…' : offline ? 'offline' : 'online'}
+            {/* "disconnected", not "offline": this state means the backend
+                could not be reached, not that the persona is merely away.
+                The red is correct because it IS a failure -- the word was
+                the inaccurate part. */}
+            {isAwaitingReply ? 'Typing…' : offline ? 'disconnected' : 'online'}
           </div>
         </div>
       </header>
@@ -248,6 +276,12 @@ export default function Chatroom() {
       >
         <input
           type="text"
+          // A NAME, not a description. The placeholder cannot do this job:
+          // it is the only thing a screen reader had to go on, and it is
+          // also dynamic -- it becomes "Verifying code…" and then "Access
+          // granted via ABC123", so the control's name changed under the
+          // user mid-flow.
+          aria-label="Invite code"
           placeholder={
             isVerified
               ? `Access granted via ${code}`
@@ -269,7 +303,19 @@ export default function Chatroom() {
 
       {/* Message area over the steady wallpaper */}
       <div className="chatroom__body" style={{ backgroundImage: `url(${wallpaper})` }}>
-        <div className="chatroom__scroll" ref={scrollRef}>
+        {/* role="log" + aria-live: without them a screen reader user was
+            told the persona was typing (the indicator below has
+            role="status") and then never told what it said. `additions`
+            only -- re-announcing the whole thread on each new bubble
+            would be unusable. */}
+        <div
+          className="chatroom__scroll"
+          ref={scrollRef}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          aria-label="Conversation"
+        >
           {messages.map((msg) => {
             // System / error notice -- centred yellow bubble, no tail.
             if (msg.sender === 'system') {
@@ -287,10 +333,13 @@ export default function Chatroom() {
             // Two ways a user bubble stops being part of the conversation, with
             // the same red styling but different notes -- "Not sent" would be a
             // false statement for a withheld turn, which the server did receive
-            // and store before dropping it from the history.
-            const blocked = isUser && blockedIds.includes(msg.id);
-            const withheld = isUser && !blocked && withheldIds.includes(msg.id);
-            const note = blocked ? '✕ Not sent' : withheld ? '✕ Not answered' : null;
+            // and store before dropping it from the history. The status now
+            // lives on the message itself, so it survives a refresh with the
+            // text it describes (see Message.status in ChatContext).
+            const note =
+              isUser && msg.status === 'blocked' ? '✕ Not sent'
+              : isUser && msg.status === 'withheld' ? '✕ Not answered'
+              : null;
             return (
               <div
                 key={msg.id}

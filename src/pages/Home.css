@@ -14,11 +14,12 @@
    below match the code.
    =================================================================== */
 
-/* Guard the full-bleed math against the horizontal scrollbar. `clip`
-   (unlike `hidden`) does not break the sticky navbar. */
-html {
-  overflow-x: clip;
-}
+/* NOTE: the `html { overflow-x: clip }` guard that used to sit here now
+   lives in src/styles.css, next to the other document-level rules and with
+   the measurements that motivated it. It was declared in both files, which
+   is one rule too many -- and a document-level rule does not belong in a
+   page stylesheet: Home.css is imported by Home.tsx, so scoping it here
+   made a global invariant depend on which route happened to be mounted. */
 
 /* ===================================================================
    Scroll reveal
@@ -35,10 +36,11 @@ html {
    in hooks/useRevealOnScroll.ts.
    =================================================================== */
 :root {
-  /* how long a section takes to fade in -- the one knob for the feel */
-  --reveal-anim: 0.7s;
-  /* ditto for a single journey timeline row (see .jtl__item.reveal) */
-  --reveal-item-anim: 0.5s;
+  /* How long a section takes to fade in -- the one knob for the feel.
+     Was 0.7s, which a fast scroller could outrun: you arrived at a
+     section before it had finished appearing. 0.4s still reads as a fade
+     and is done by the time the section settles. */
+  --reveal-anim: 0.4s;
 }
 
 .reveal {
@@ -72,8 +74,168 @@ html {
    directly under it as a small tracked caps line -- the standard way to
    pin a title to a name without competing with it for weight. Tight
    margins keep the two reading as one block rather than two headings. */
-.about__name {
+/* Name and chat icon on one line. `position: relative` anchors the hint
+   bubble; `align-items: center` keeps the icon on the name's optical
+   centre rather than its baseline, which sits too low next to a 29px h1. */
+.about__namerow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3, 0.75rem);
   margin: 0 0 0.35rem;
+}
+.about__name {
+  margin: 0;
+}
+
+/* ---- Chat entry point (components/ChatCta.tsx) ---------------------
+   The same mark and colour as the floating launcher, so the button here
+   and the one that follows you down the page read as one object. */
+/* `static`, not `relative`: the hint's containing block is then
+   .about__namerow, whose width is exactly the space the bubble has to
+   fit into. ChatCta.tsx places the bubble within it. */
+.chat-cta {
+  position: static;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.chat-cta__btn {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  background: var(--brand-accent, #f08000);
+  box-shadow: var(--shadow-raise, 0 2px 8px rgba(31, 38, 36, 0.08));
+  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.chat-cta__btn img {
+  display: block;
+  width: 62%;
+  height: 62%;
+  object-fit: contain;
+}
+.chat-cta__btn:hover,
+.chat-cta__btn:focus-visible {
+  transform: translateY(-2px);
+  background: #d97300;
+  box-shadow: var(--shadow-lift, 0 10px 22px rgba(31, 38, 36, 0.16));
+}
+.chat-cta__btn:focus-visible {
+  outline: 3px solid var(--brand-ink, #283030);
+  outline-offset: 3px;
+}
+
+/* The hint bubble, sitting ABOVE and to the RIGHT of the icon with its
+   tail at the bottom-left corner, pointing back down at the button.
+
+   Anchored by `left` rather than centred: the left edge starts just past
+   the icon's centre, so the bubble grows rightwards into the empty part
+   of the text column and the tail lands over the icon. The name row
+   wraps, so a long name pushes the icon onto its own line where there is
+   even more room to the right -- it cannot get squeezed against the
+   column edge. */
+.chat-cta__hint {
+  position: absolute;
+  bottom: calc(100% + 0.55rem);
+  /* `left` and `max-width` are set inline by ChatCta.tsx once it has
+     measured the row and the icon; these are the pre-measurement values,
+     so the bubble is never mispositioned on the first paint. */
+  left: 0;
+  z-index: 3;
+  /* Sized to its text, so a short label does not sit in a wide empty box.
+     It wraps only when the measured cap forces it to. */
+  width: max-content;
+  max-width: 15rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.5rem;
+  background: var(--brand-ink, #283030);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.35;
+  box-shadow: var(--shadow-lift, 0 10px 22px rgba(31, 38, 36, 0.16));
+  translate: 0 0;
+  scale: 1;
+  transform-origin: bottom left;   /* it grows from, and collapses toward, the tail */
+  transition:
+    opacity 0.4s ease,
+    translate 0.4s ease,
+    scale 0.4s ease,
+    visibility 0s linear 0s;
+}
+/* The tail, pointing down at the icon. `--tail-x` is measured in
+   ChatCta.tsx as the icon's centre relative to this bubble's left edge,
+   because the bubble is anchored to the icon on wide screens and to the
+   whole name row on narrow ones -- CSS alone cannot know where the icon
+   ended up, since that depends on the length of the owner's name. The
+   fallback keeps it near the bottom-left corner if the script has not
+   measured yet. */
+.chat-cta__hint::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: var(--tail-x, 0.9rem);
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: var(--brand-ink, #283030);
+}
+
+/* A small wag on arrival, pivoting on the tail (transform-origin is
+   bottom left), then still. Three half-second passes = the 1.5s asked
+   for; it stops on its own rather than looping, because a control that
+   keeps twitching reads as broken rather than inviting.
+
+   Deliberately `transform`, while the fade uses `translate` and `scale`
+   as separate properties -- the engine applies translate, then scale,
+   then transform, so the wag and the dismissal compose instead of
+   overwriting one another. */
+@keyframes chat-hint-nudge {
+  0%, 100% { transform: none; }
+  20%      { transform: translateX(-2px) rotate(-1.2deg); }
+  40%      { transform: translateX(2px) rotate(1.2deg); }
+  60%      { transform: translateX(-1.5px) rotate(-0.8deg); }
+  80%      { transform: translateX(1.5px) rotate(0.8deg); }
+}
+.chat-cta__hint {
+  animation: chat-hint-nudge 0.5s ease-in-out 3;
+}
+/* Never wag on the way out. */
+.chat-cta__hint.is-gone {
+  animation: none;
+}
+/* Dismissed -- by the timer or by the first scroll. Three things move
+   together so it reads as the bubble retracting into the button rather
+   than a box switching off: it fades, drifts down toward the icon, and
+   shrinks toward the tail (hence transform-origin above).
+   `visibility` is stepped and HELD for the full fade -- the same
+   technique the bottom sheets use. Without it the bubble would blink out
+   on the first frame instead of fading. */
+.chat-cta__hint.is-gone {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  translate: 0 0.3rem;
+  scale: 0.88;
+  transition:
+    opacity 0.4s ease,
+    translate 0.4s ease,
+    scale 0.4s ease,
+    visibility 0s linear 0.4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-cta__btn { transition: none; }
+  .chat-cta__btn:hover,
+  .chat-cta__btn:focus-visible { transform: none; }
+  .chat-cta__hint,
+  .chat-cta__hint.is-gone {
+    transition: none;
+    translate: 0 0;
+    scale: 1;
+    animation: none;   /* no wag either */
+  }
 }
 .about__title {
   margin: 0 0 1.1rem;
@@ -83,6 +245,35 @@ html {
   text-transform: uppercase;
   /* the text-safe orange, not --brand-accent -- see styles.css */
   color: var(--brand-accent-ink, #b35900);
+}
+
+/* Education moved into About from its own band. A small heading, not an
+   <h2> at section scale -- it is a sub-part of About, and the page's
+   heading levels should say so. */
+.about__education {
+  margin: var(--sp-5, 1.5rem) 0 0;
+}
+.about__eduhead {
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color, #6c757d);
+  margin: 0 0 var(--sp-3, 0.75rem);
+}
+
+/* Chat CTA and CV side by side; they wrap to their own lines before
+   getting cramped. Centred on phones, left-aligned from sm up -- the
+   buttons are inline-block, so the wrapper's text-align used to do this,
+   but a flex row needs justify-content instead. */
+.about__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3, 0.75rem);
+  justify-content: center;
+}
+@media (min-width: 576px) {
+  .about__actions { justify-content: flex-start; }
 }
 
 /* ===================================================================
@@ -183,6 +374,10 @@ html {
 }
 .cred__org {
   margin-top: 0.1rem;
+  /* Italic, matching .jtl__org on the journey cards -- the awarding body
+     is the same kind of thing in both places, so it should look the same
+     in both. It was the one institution line on the page set upright. */
+  font-style: italic;
   font-size: 0.9rem;
   color: var(--ink-body, #4a5259);
 }
@@ -192,6 +387,140 @@ html {
   color: var(--ink-body, #4a5259);
 }
 
+/* ---- List variant (About > Education) -----------------------------
+   Plain bullets. The same fields as the cards above, re-laid inline:
+   Education is supporting detail under a bio, not a section of records,
+   and four bordered cards there gave it the same visual weight as
+   "Certification & Award" -- which is what made that column read as a
+   stack of boxes. Back in normal flow (not the flex column above) so
+   the ::marker actually renders. */
+.cred--list {
+  display: block;
+  list-style: disc;
+  padding-left: 1.15rem;
+  margin: 0;
+  color: var(--ink-body, #4a5259);
+}
+.cred--list > li {
+  /* Each bullet is two or three lines now, so they need more air between
+     them than they did as single sentences, or the block reads as one
+     paragraph with stray bullets in it. */
+  margin-bottom: 0.6rem;
+  font-size: 0.92rem;
+  /* A LENGTH, not the usual multiplier: the qualification's name below is
+     set larger than the rest of the line, and a unitless line-height
+     would recompute against that bigger font and open up whichever
+     wrapped lines the name happens to land on. Fixing the line box keeps
+     a wrapped bullet evenly leaded. */
+  line-height: 1.4rem;
+}
+/* No card chrome, and no accent bar -- that rule targets .cred__item,
+   which this variant does not use, but the reset is here so the two
+   variants cannot drift into each other. */
+.cred--list > li::before {
+  content: none;
+}
+/* The qualification itself, a step up from the institution and year that
+   follow it -- it is the thing being scanned for, and at one flat size
+   the whole bullet read as undifferentiated detail. */
+.cred--list .cred__title {
+  display: block;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--brand-ink, #283030);
+  /* Takes the fixed line box set on the <li> instead of the unitless
+     1.35 the card variant gives .cred__title, which would recompute
+     against this larger size. It currently lands under the strut either
+     way, so nothing moves today -- this is so a future bump to the size
+     above cannot start opening up the lines the name wraps onto. */
+  line-height: inherit;
+}
+/* The institution and year, on the line below the qualification -- the
+   same split the cards use, so the two sections read as one system.
+   Baseline-aligned rather than centred, so the year sits on the
+   institution's FIRST line when a long name wraps, exactly as it does on
+   the cards. */
+.cred--list .cred__sub {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.92rem;
+}
+.cred--list .cred__org {
+  display: inline;
+  margin: 0;
+  font-style: italic;
+  font-size: inherit;
+}
+/* Pushed to the right edge of the column so the dates read as a column
+   of their own -- the reason the cards pull the year out too. `auto`
+   margin rather than `justify-content: space-between` on the row above:
+   space-between puts a lone child at the START, so a row with a year and
+   no institution would have left it stranded on the left.
+   `tabular-nums` (from the base .cred__year) is what lines the digits up
+   with each other once they are in a column. */
+.cred--list .cred__year {
+  margin-left: auto;
+  font-size: inherit;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.cred--list .cred__detail {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.85rem;
+}
+
+/* ===================================================================
+   Skills (About section)
+
+   Grouped pills under the role line -- the first concrete answer to
+   "what does this person actually use", which previously existed only
+   inside a project pop-up.
+
+   The group label is announced to assistive tech but never drawn, so
+   the block stays one compact row.
+
+   TWO colours, alternating group by group: the site's orange and its
+   ink. This was five named hues, one per group, sitting three lines
+   below an orange chat button and a hero photo -- it was the loudest
+   thing in the section, and with more groups than hues the colours
+   repeated anyway.
+
+   Two still marks where one group ends and the next begins, which is
+   what the colour was ever really doing; it just cannot say WHICH group
+   any run is, since with two colours they alternate rather than
+   identify. The visually-hidden label carries that, as it always did --
+   so meaning still never rests on colour. Both pairs are >= 6:1.
+   =================================================================== */
+/* One wrapping row, not a row per group -- the groups are carried by the
+   visually-hidden label, so the block stays compact under the role line
+   instead of turning into a small table. */
+.skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2, 0.5rem);
+  margin: 0 0 var(--sp-5, 1.5rem);
+}
+.skills__pill {
+  display: inline-block;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: var(--_pill-bg, #eceeee);
+  color: var(--_pill-ink, #414a47);
+}
+/* The brand orange, in its text-safe form: #f08000 is a shape colour, not
+   a text one (see --brand-accent vs --brand-accent-ink in styles.css). */
+.skills__pill--accent { --_pill-bg: #fbeee0; --_pill-ink: #8f4700; }
+/* The brand charcoal on the page's own paper tone, so the second colour
+   is the site's ink rather than a third hue introduced for the purpose. */
+.skills__pill--ink    { --_pill-bg: #eceae5; --_pill-ink: #283030; }
+
+
 .hero-band {
   --_bg-size: var(--hero-bg-size, cover);
   --_h: var(--hero-h, 46vw);   /* vw so the band keeps its shape across same-ratio screens */
@@ -200,8 +529,33 @@ html {
   --_focus-x: var(--hero-focus-x, 50%);
   --_focus-y: var(--hero-focus-y, 32%);
   --_zoom: var(--hero-zoom, 1.12);
-  --_scrim-start: var(--hero-scrim-start, 44%);
-  --_scrim-end: var(--hero-scrim-end, 56%);
+  /* ---- Where the photo actually ends, and so where the scrim goes ----
+     In 'fitHeight' the photo is as tall as the band and as wide as its
+     own aspect makes it, so its right edge is a LENGTH, not a fixed
+     percentage of the band. --hero-aspect is measured from the real file
+     by <HeroBand> and published here; 1.4 is only the value used for the
+     frame or two before that resolves. In 'cover' the band is the photo,
+     so HeroBand publishes a huge aspect and the min() below pins the
+     reach to 100%.
+
+     This is the fix for a hard-edged photo on wide displays: --_h is
+     clamped, so past ~2250px the band stops growing while the band keeps
+     widening, and the photo's edge slides left as a proportion. A scrim
+     at a fixed 44% stayed put and stopped covering it. */
+  --_aspect: var(--hero-aspect, 1.4);
+  --_h-resolved: clamp(var(--_h-min), var(--_h), var(--_h-max));
+  --_photo-w: min(calc(var(--_h-resolved) * var(--_aspect)), 100%);
+
+  /* Full page background by here: the photo's edge, or the text column's
+     inner edge if the photo runs past it. The min() is what guarantees
+     the copy never sits on the picture, whatever the framing numbers. */
+  --_scrim-hard: min(var(--_photo-w), calc(100% - var(--_text-width)));
+  /* ...blending from here. The blend length is a fraction of the PHOTO,
+     so the same amount of picture is washed at every size. max() keeps
+     it on the band for a very short photo, where the fade would
+     otherwise start at a negative offset. */
+  --_scrim-soft: max(0%, calc(var(--_scrim-hard) - var(--_scrim-fade)));
+  --_scrim-fade: calc(var(--_photo-w) * var(--hero-scrim-fade, 22) / 100);
   --_text-width: var(--hero-text-width, 44%);
   --_bottom-fade: 10px;   /* thin soft edge along the photo's bottom */
 
@@ -213,14 +567,22 @@ html {
   isolation: isolate;
   display: flex;
 
-  /* Full-bleed: band edge == viewport edge. */
+  /* Full-bleed: band edge == viewport edge.
+     This overhangs by the scrollbar width on a classic-scrollbar browser
+     (50vw counts the scrollbar, 50% does not). `overflow-x: clip` on
+     `html` absorbs it -- see the note on that rule in styles.css for why
+     it cannot be subtracted here in CSS alone. */
   margin-inline: calc(50% - 50vw);
   margin-block: 3rem;
 
   /* Bounded PREFERRED height (predictable, zero CLS) -- a floor, not a
      cap: if the content is taller than this on a narrow desktop, the band
      grows to fit instead of clipping it. */
-  min-height: clamp(var(--_h-min), var(--_h), var(--_h-max));
+  /* A floor, not a cap -- the same expression --_photo-w is derived from,
+     so a band that content pushes TALLER than this makes the photo wider
+     than we computed. That errs safe: the scrim then finishes inside the
+     photo rather than short of it, which is more wash, never a hard edge. */
+  min-height: var(--_h-resolved);
   overflow: hidden;
 }
 
@@ -236,6 +598,13 @@ html {
   inset: 0;
   z-index: 0;
 
+  /* --hero-img / --hero-img-sm are set inline by <HeroBand> from the two
+     site_image slots. The wide-layout file is the default; the narrow one
+     is swapped in at the same breakpoint the band itself stacks at, so
+     the picture and the layout always change together. A band with only
+     one image gets the same URL in both, and nothing extra is fetched --
+     browsers download only the variant the matched rule uses. */
+  background-image: var(--hero-img);
   background-repeat: no-repeat;
   background-size: var(--_bg-size);
   background-position: var(--_focus-x) var(--_focus-y);
@@ -248,9 +617,71 @@ html {
   mask-image: linear-gradient(to bottom, #000 calc(100% - var(--_bottom-fade)), transparent);
 }
 
-/* Layer 1: page-background scrim over the text side. Opaque past
-   --_scrim-end, which Home.tsx caps to the text column's inner edge, so
-   the text can never sit on the photo. */
+/* No photo: either the content fetch is still in flight, or no
+   site_image row supplies one. The band keeps its full geometry either
+   way -- its height comes from the clamp above and its own text, never
+   from the picture -- so this is a tint over the space the photo WILL
+   occupy, not a placeholder that reserves it. A plain neutral wash: a
+   stronger colour would read as a design element rather than as an
+   absence. It sits under the same scrim the photo does. */
+.hero-band__img--empty {
+  background-color: var(--surface-2, #f4f2ef);
+  /* No zoom to apply, and the bottom feather exists to soften a photo's
+     hard edge -- over a flat tint it just looks like a smudge. */
+  transform: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* Authoring guidance inside that empty area (Home.tsx's
+   HERO_IMAGE_PLACEHOLDER): rendered only once the fetch has settled and
+   the band genuinely has no image row. Centred in the PHOTO's half of
+   the band rather than the whole band, so it stays clear of the copy and
+   out from under the scrim's opaque end. Mirrored for .hero-band--flip,
+   whose photo is on the right. */
+.hero-band__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4, 1rem);
+  text-align: center;
+  color: var(--bs-secondary-color, #6c757d);
+  margin-inline-end: calc(100% - var(--_scrim-hard));
+}
+.hero-band--flip .hero-band__empty {
+  margin-inline-end: 0;
+  margin-inline-start: calc(100% - var(--_scrim-hard));
+}
+
+@media (max-width: 899.98px) {
+  /* About-style bands promote the photo to a real 4:3 block at the top of
+     the band (see the :not(#certifications) rules further down). With no
+     photo that is a slab of empty tint above the copy, so collapse it. */
+  .hero-band:not(#certifications) .hero-band__img--empty {
+    display: none;
+  }
+  /* Elsewhere below this width the photo is only a faint backdrop behind
+     the text and the scrim is switched off entirely, so there is no
+     "photo half" left to sit in -- the guidance would print on top of
+     the bio. It is an authoring affordance, and authors have a desktop. */
+  .hero-band__empty {
+    display: none;
+  }
+}
+
+/* Layer 1: page-background scrim over the text side, and the thing that
+   feathers the photo's inner edge. Both stops are derived (see the block
+   at the top of .hero-band), so the blend always lands ON the photo.
+
+   Measured along the gradient's own axis, which --_scrim-dir flips for
+   .hero-band--flip. That works because the photo is anchored to the same
+   edge the gradient starts from: focusX 0 with `to right` for About,
+   focusX 100 with `to left` for the mirrored band. A fitHeight photo
+   with focusX near 50 would float free of both edges and this would not
+   describe it -- anchor it, or use `cover`. */
 .hero-band__scrim {
   position: absolute;
   inset: 0;
@@ -258,8 +689,8 @@ html {
   background: linear-gradient(
     var(--_scrim-dir),
     transparent 0%,
-    transparent var(--_scrim-start),
-    var(--bs-body-bg, #fff) var(--_scrim-end)
+    transparent var(--_scrim-soft),
+    var(--bs-body-bg, #fff) var(--_scrim-hard)
   );
 }
 
@@ -279,6 +710,13 @@ html {
   max-width: 40rem;      /* rem so it grows with the 4K root-font bump */
   margin-left: auto;     /* -> right side (flipped below) */
   padding-right: 1rem;
+  /* Breathing room above the first line. The band is vertically centred,
+     which used to be enough -- but the About column now carries the name,
+     role, skills, bio, education and two buttons, so it is taller than
+     the band's min-height and centring has nothing left to give. Without
+     this the <h1> starts hard against the sticky navbar. Overridden by
+     both narrow-screen blocks further down, which set their own padding. */
+  padding-block: clamp(1.75rem, 3vw, 3.25rem);
 }
 
 /* Hard guarantee: a solid page-background panel directly behind the text
@@ -336,6 +774,10 @@ html {
   }
 
   .hero-band__img {
+    /* The narrow-screen variant, framed for the stacked layout. Same
+       breakpoint the band stacks at, so picture and layout switch
+       together. Falls back to --hero-img when a band has only one file. */
+    background-image: var(--hero-img-sm, var(--hero-img));
     opacity: 0.16;
     transform: none;
     /* `cover` (not `auto 100%`) so the faint backdrop always fills the band
@@ -375,18 +817,24 @@ html {
   }
 }
 
-/* --- Smartphone: image ON TOP of the text (not a backdrop behind it) --
-   The <= 900px treatment above turns the photo into a faint full-bleed
-   wash sitting behind the copy. On a phone that just reads as "no image,
-   floating text", so for the About and Qualifications bands the photo
-   becomes a real block at the TOP of the band -- full-bleed, full
-   opacity, with a soft fade along its bottom edge -- and the text
-   follows beneath it in normal flow. Certifications is deliberately
-   EXCLUDED (:not(#certifications)) and keeps the faint-backdrop layout.
-   Body copy also steps down to a phone reading size (~14px, a
-   search-result snippet). Supersedes the <= 480px framing block above
-   for the two stacked bands. */
-@media (max-width: 575.98px) {
+/* --- Below 900px: image ON TOP of the text (not a backdrop behind it) --
+   The <= 900px block above turns the photo into a faint full-bleed wash
+   sitting behind the copy. That works for #certifications, whose image is
+   a pale document scan: the text stays legible over it and the band stays
+   short, so a reader reaches more of the page before leaving.
+
+   It does NOT work for #about, whose image is a portrait -- at tablet
+   widths the <h1> landed on a face, with the lowest contrast on the page.
+   So About stacks instead: the photo becomes a real block at the TOP of
+   the band, full-bleed and full opacity with a soft fade along its bottom
+   edge, and the text follows beneath it in normal flow.
+
+   This used to start at 575.98px, which left 576-900px -- ordinary tablet
+   width -- rendering headings over faces. It now starts at 899.98px, the
+   same breakpoint the backdrop treatment begins at, so there is no band
+   in between where neither rule is right. #certifications stays excluded
+   and keeps the backdrop. */
+@media (max-width: 899.98px) {
   .hero-band:not(#certifications) {
     --_bottom-fade: 2rem;      /* was 10px -- a softer seam into the text */
     display: block;            /* was: flex row */
@@ -419,6 +867,37 @@ html {
   /* Body copy steps down to a phone reading size via the shared `.lead`
      rule in styles.css -- no hero-specific override, so every section
      matches. */
+}
+
+/* ===================================================================
+   Prose bullet lists
+
+   <Prose> turns any run of "- " / "* " lines into a list ("point form").
+   The same markup shows up in the About statement, the Journey card and
+   its sheet, and the Project sheet overview, so the list geometry is set
+   here once. Text size is NOT set here: the <li>s carry `.lead`, so each
+   place's own `.lead` rule (the smaller journey/sheet body size, the
+   phone step-down in styles.css) already covers them.
+   =================================================================== */
+.prose__list {
+  margin: 0 0 0.6rem;
+  padding-left: 1.2rem;
+}
+.prose__list li {
+  margin-bottom: 0.3rem;
+}
+.prose__list li:last-child {
+  margin-bottom: 0;
+}
+/* A list straight after a paragraph shouldn't leave a double gap. */
+.lead + .prose__list {
+  margin-top: -0.15rem;
+}
+/* Last block in a run carries no trailing margin -- the container spaces
+   the section. Mirrors how the final `.lead` paragraph behaves in each
+   place that zeroes it (journey card, sheets). */
+.prose__list:last-child {
+  margin-bottom: 0;
 }
 
 /* ===================================================================
@@ -470,15 +949,10 @@ html {
   mask-image: linear-gradient(to bottom, transparent 0, #000 var(--jtl-line-fade));
 }
 
-/* Each row fades in on its own as it's scrolled to (useRevealOnScroll,
-   driven off the block ids the <li>s already carry as anchors), inside the
-   whole-section fade. A shade quicker than a section: a row is a small
-   thing arriving, and at the section's pace a run of them reads as slow.
-   The rail (.jtl::before) is on the <ol>, not the rows, so it stays put
-   and the entries materialise along an already-drawn spine. */
-.jtl__item.reveal {
-  transition-duration: var(--reveal-item-anim, 0.5s);
-}
+/* Timeline rows used to carry their own reveal, nested inside the
+   section's. Removed: two fades over the same content read as repetitive
+   and delayed reading for nothing, since the rail already gives the rows
+   a strong order. The rows now appear with their section. */
 
 /* one row */
 .jtl__item {
@@ -628,9 +1102,12 @@ html {
 .jtl .lead {
   font-size: clamp(0.875rem, 0.8rem + 0.3vw, 0.95rem);
   font-weight: 400;
-  margin-bottom: 0;
 }
-.jtl .lead + .lead { margin-top: 0.5rem; }
+/* Paragraph-only spacing -- `.lead` also rides on the <li>s of a
+   point-form body (see <Prose>), whose row spacing is `.prose__list`'s
+   job, not this. */
+.jtl p.lead { margin-bottom: 0; }
+.jtl p.lead + p.lead { margin-top: 0.5rem; }
 
 .jtl__badge {
   display: inline-block;
@@ -651,6 +1128,19 @@ html {
   width: 100%;
   max-width: var(--jtl-media-w, 32rem);
   align-self: center;   /* vertically centred against the card */
+  margin: 0;            /* it is a <figure>; drop the UA/Reboot margin */
+}
+/* The photo's caption (site_journey.image_description). Centred under the
+   image and deliberately quiet -- it explains the picture, it does not
+   compete with the card beside it. The gap is small because the image's
+   bottom edge is already feathered out by the mask below, so a normal
+   one reads as a hole. */
+.jtl__caption {
+  margin: 0.35rem 0 0;
+  text-align: center;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--bs-secondary-color, #6c757d);
 }
 .jtl__media img {
   display: block;
@@ -1077,15 +1567,138 @@ html {
   appearance: none;
   cursor: pointer;
 }
+/* The thumbnail's positioning context -- the overview panel is absolutely
+   placed against this, not against the whole card, so it covers the image
+   and leaves the label and chips readable underneath. */
+.proj-card__frame {
+  position: relative;
+  display: block;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow: var(--shadow-raise, 0 2px 8px rgba(31, 38, 36, 0.08));
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
 .proj-card__img {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 10;
   object-fit: cover;
-  border-radius: 0.75rem;
   background: var(--bs-tertiary-bg, #f2f2f2);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Overview, revealed on hover / keyboard focus. It is a summary, not the
+   whole story -- the sheet still holds features, links and clips.
+   Centred in the panel, both axes. */
+.proj-card__reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4, 1rem);
+  background: linear-gradient(
+    to top,
+    rgba(31, 38, 36, 0.94) 0%,
+    rgba(31, 38, 36, 0.86) 55%,
+    rgba(31, 38, 36, 0.55) 100%
+  );
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.proj-card__overview {
+  /* Fills the padded panel so a point-form overview can space its bullets
+     out over the whole height. `align-items: center` centres the bullet
+     list AS A BLOCK -- the items themselves stay left-aligned against a
+     shared left edge (see .prose__list below). A long overview clips (the
+     frame is overflow:hidden) rather than overflowing the thumbnail. */
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+/* <Prose> inside the dark reveal panel: white ink, the card's compact
+   size rather than the page `.lead` size. Text reads left-aligned. */
+.proj-card__overview p,
+.proj-card__overview li {
+  margin: 0;
+  color: #fff;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  max-width: none;
+  text-align: left;
+}
+/* Point form: a normal left-aligned bulleted list (shared left edge, a
+   dot per item), but the list as a whole is centred (align-items on the
+   parent) and its items are spread evenly down the full panel height.
+   The dot is a ::before rather than list-style: making the <ul> a flex
+   container -- needed for space-evenly -- suppresses real list markers. */
+.proj-card__overview .prose__list {
+  flex: 1;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.proj-card__overview .prose__list li {
+  position: relative;
+  padding-left: 1rem;
+}
+.proj-card__overview .prose__list li::before {
+  content: "\2022";           /* • */
+  position: absolute;
+  left: 0.1rem;
+  top: 0;
+}
+/* Fallback (un-migrated project): a paragraph overview -- full width and
+   left-aligned, still centred vertically by the flex rules above. */
+.proj-card__overview > p {
+  align-self: stretch;
+}
+.proj-card__overview > p ~ p {
+  margin-top: 0.5rem;
+}
+.proj-card--btn:hover .proj-card__reveal,
+.proj-card--btn:focus-visible .proj-card__reveal,
+.proj-card:hover .proj-card__reveal {
+  opacity: 1;
+}
+
+/* Technology chips under the label -- the stack was previously visible
+   only inside the pop-up, so a visitor who never clicked saw none of it. */
+.proj-card__tech {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+}
+.proj-card__chip {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--surface-line, #dee2e6);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--ink-body, #4a5259);
+  white-space: nowrap;
+}
+.proj-card__chip--more {
+  border-style: dashed;
+  color: var(--bs-secondary-color, #6c757d);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proj-card__frame,
+  .proj-card__reveal { transition: none; }
 }
 .proj-card__img--empty {
   aspect-ratio: 16 / 10;
@@ -1096,27 +1709,22 @@ html {
   line-height: 1.3;
   text-align: center;   /* centred under the thumbnail */
 }
-/* interactivity only on the clickable variant */
-.proj-card--btn:hover .proj-card__img,
-.proj-card--btn:focus-visible .proj-card__img {
+/* Interactivity only on the clickable variant. The lift moved from the
+   image to the frame, so the overview panel rides with it. */
+.proj-card--btn:hover .proj-card__frame,
+.proj-card--btn:focus-visible .proj-card__frame {
   transform: translateY(-3px);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-lift, 0 10px 22px rgba(31, 38, 36, 0.16));
 }
 .proj-card--btn:focus-visible {
   outline: none;
 }
-.proj-card--btn:focus-visible .proj-card__img {
+.proj-card--btn:focus-visible .proj-card__frame {
   outline: 2px solid var(--bs-primary, #0d6efd);
   outline-offset: 2px;
 }
 .proj-card--btn:hover .proj-card__label {
   text-decoration: underline;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .proj-card__img {
-    transition: none;
-  }
 }
 
 /* ===================================================================
@@ -1140,7 +1748,11 @@ html {
   display: flex;
   flex-wrap: wrap;       /* a very large project count wraps rather than clipping */
   justify-content: center;
-  gap: 12px;
+  /* Dot centres sit `gap + dot` apart, and each dot's invisible hit area
+     is sized to exactly that pitch below -- so the hit areas tile the row
+     edge to edge with no overlap and no dead gaps between them. Raising
+     this raises the touch target; the two must move together. */
+  gap: 16px;
   padding: 6px;          /* room for the window outline */
 }
 .proj-dots__dot {
@@ -1155,12 +1767,20 @@ html {
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
-/* Invisible hit area, well past the visible dot, so it's easy to click/tap
-   without making the dots themselves large. */
+/* Invisible hit area, well past the visible dot, so the target is big
+   without the dots themselves getting big.
+
+   12px dot + 8px on every side = a 28x28 target, which clears WCAG 2.5.8
+   (Target Size Minimum, AA: 24x24). It cannot usefully go to the 44x44 of
+   2.5.5 (AAA): the dots would have to sit 44px apart for the targets not
+   to overlap each other, and at that pitch the row stops reading as a
+   compact minimap. 28px matches the 16px gap above exactly, so adjacent
+   targets tile without overlapping -- overlapping targets are worse than
+   small ones, because the wrong dot silently wins the tap. */
 .proj-dots__dot::before {
   content: "";
   position: absolute;
-  inset: -6px;
+  inset: -8px;
 }
 .proj-dots__dot.is-active {
   background: var(--bs-primary, #0d6efd);
@@ -1281,8 +1901,19 @@ html {
   text-transform: uppercase;
   color: var(--bs-secondary-color, #6c757d);
 }
-.psheet__aside .lead {
-  margin-bottom: 0;   /* size: shared .lead rule (styles.css) */
+.psheet__aside > .lead {
+  /* Only the overview PARAGRAPHS -- direct children. Not `.psheet__aside
+     .lead`, which also matched the <li class="lead"> in a point-form
+     overview and flattened the list's row spacing. */
+  margin-bottom: 0;
+}
+/* Overview + Main features body: a notch under the shared `.lead` size so
+   they don't compete with the sheet's `.h4` heading -- same step-down the
+   journey sheet uses (.jsheet__body .lead). Covers overview paragraphs,
+   point-form overview bullets, and the features list. */
+.psheet__aside .lead,
+.psheet__list li {
+  font-size: clamp(0.875rem, 0.8rem + 0.3vw, 0.95rem);
 }
 .psheet__list {
   margin: 0;
@@ -1293,7 +1924,9 @@ html {
 }
 .psheet__tech {
   list-style: none;
-  margin: 0;
+  /* top gap stands in for the removed "Technologies used" heading, so the
+     chips don't butt against the features list above */
+  margin: 1.4rem 0 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
@@ -1306,11 +1939,24 @@ html {
   border-radius: 1rem;
   background: var(--bs-tertiary-bg, #f0f0f0);
 }
+/* Title row: label on the left, GitHub / Live demo on the right; the
+   buttons drop to their own line under the title when the column is too
+   narrow to hold both. */
+.psheet__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
+.psheet__head #psheet-title {
+  margin: 0;
+}
 .psheet__links {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
-  margin-top: 1.5rem;
 }
 
 .psheet__media {
@@ -1322,6 +1968,20 @@ html {
 .psheet__video {
   margin: 0;
 }
+/* Left-aligned header above each clip. */
+.psheet__video-head {
+  margin: 0 0 0.4rem;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: var(--ink-body, #4a5259);
+}
+/* Wraps the video + overlay button only, so the button's `top: 0` lands
+   on the clip and not on the header above it. */
+.psheet__video-frame {
+  position: relative;
+}
 .psheet__video video {
   display: block;
   width: 100%;
@@ -1329,14 +1989,89 @@ html {
   object-fit: cover;
   border-radius: 0.75rem;
   background: #000;
-  pointer-events: none;   /* can't pause / scrub / right-click -- the "inline media" pattern */
-}
-.psheet__video figcaption {
-  margin-top: 0.5rem;
-  font-size: 0.9rem;
-  color: var(--bs-secondary-color, #666);
+  /* Still no scrubbing, no right-click, no native chrome -- the "inline
+     media" look is intact. What changed is that stopping the clip is now
+     possible at all: the control is the sibling button below, layered over
+     the frame, rather than the video's own controls. */
+  pointer-events: none;
 }
 
+/* Pause / replay. Sits over the centre of the clip, stays out of the way
+   while playing (it fades to a hint) and becomes solid once the clip has
+   stopped, which is when it is actually offering something. */
+.psheet__video-btn {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  /* Cover the frame only, never the caption below it. */
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+.psheet__video-btn:hover,
+.psheet__video-btn:focus-visible {
+  background-color: rgba(0, 0, 0, 0.28);
+}
+.psheet__video-btn:focus-visible {
+  outline: 3px solid var(--brand-accent, #f08000);
+  outline-offset: 3px;
+}
+
+/* One element, two glyphs: a right-pointing triangle (replay) drawn with
+   borders, swapped for two bars (pause) while the clip runs. */
+.psheet__video-icon {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  opacity: 1;
+  transition: opacity 0.18s ease;
+}
+.psheet__video-icon::before {
+  content: '';
+  /* Play triangle, nudged right so it looks optically centred in the disc. */
+  border-style: solid;
+  border-width: 0.6rem 0 0.6rem 1rem;
+  border-color: transparent transparent transparent #fff;
+  margin-left: 0.25rem;
+}
+.psheet__video-btn.is-playing .psheet__video-icon {
+  /* Playing: get out of the way until pointed at. */
+  opacity: 0;
+}
+.psheet__video-btn.is-playing:hover .psheet__video-icon,
+.psheet__video-btn.is-playing:focus-visible .psheet__video-icon {
+  opacity: 1;
+}
+.psheet__video-btn.is-playing .psheet__video-icon::before {
+  /* Pause bars. */
+  border: 0;
+  width: 0.95rem;
+  height: 1.15rem;
+  margin-left: 0;
+  background: linear-gradient(
+    to right,
+    #fff 0 0.3rem,
+    transparent 0.3rem 0.65rem,
+    #fff 0.65rem 0.95rem
+  );
+}
+@media (prefers-reduced-motion: reduce) {
+  .psheet__video-btn,
+  .psheet__video-icon { transition: none; }
+  /* Nothing auto-plays under reduced motion, so the control must be
+     visible rather than revealed on hover. */
+  .psheet__video-btn.is-playing .psheet__video-icon { opacity: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
   .psheet__panel {
     transition: none;

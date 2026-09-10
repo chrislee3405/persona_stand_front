@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { BaseSyntheticEvent, ChangeEvent } from 'react';
-import { useChat, type Message } from '../context/ChatContext';
+import { useChat, type Message, type MessageStatus } from '../context/ChatContext';
 import { postJson, errorDetail } from '../lib/api';
 import {
   TYPING_MS_PER_CHAR,
@@ -99,9 +99,9 @@ interface UseChatDispatchArgs {
  * input field value, the rapid-fire fragment batching (hold buffer + flush
  * timer), the pending-message cap, the per-turn network request, and the
  * warning / blocked-bubble UI state. Returns only what the JSX needs.
- * Two separate id lists come back for red bubbles: blockedIds (never
- * reached the conversation) and withheldIds (reached it, then was
- * dropped from it when the reply was withheld).
+ * Bubbles that are not part of the conversation are marked in place on the
+ * message objects themselves (Message.status), so the mark survives a
+ * refresh alongside the text it describes -- see markMessages below.
  */
 export function useChatDispatch({ consented, isVerified, onConsentRequired }: UseChatDispatchArgs) {
   const {
@@ -180,19 +180,31 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
   // Shared banner text for both the pending-message cap and the
   // message-too-long check below -- null hides the banner.
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
-  // Ids of user message bubbles the backend refused -- combined text over
-  // MAX_MESSAGE_LENGTH (413) or the pending cap (429). Rendered red in the
-  // message list so the user can see which pieces didn't go through.
-  const [blockedIds, setBlockedIds] = useState<string[]>([]);
-
-  // Ids of user message bubbles that DID reach the backend and were stored,
-  // but which the backend then discarded from the conversation: when the
-  // response gate withholds a reply, the server drops that user message from
-  // the history alongside the fallback notice, so the persona will never see
-  // it again. Kept separate from blockedIds because the cause -- and so the
-  // note under the bubble -- is different: "not sent" versus "not answered".
-  // Both render with the same red styling.
-  const [withheldIds, setWithheldIds] = useState<string[]>([]);
+  // Marks the user bubbles of one turn as not part of the conversation.
+  //
+  // 'blocked'  -- the backend refused the message before storing it: the
+  //               privacy gate (400), combined text over MAX_MESSAGE_LENGTH
+  //               (413), the pending cap or the daily allowance (429),
+  //               missing consent (403), or a transport failure.
+  // 'withheld' -- the backend DID store it, then dropped it from the
+  //               conversation: the response gate withheld a reply, or
+  //               generation failed and the row was retagged. The persona
+  //               will never see it.
+  //
+  // The distinction is the reason these are two values and not one flag --
+  // "not sent" and "not answered" are different things to tell someone.
+  //
+  // This writes ONTO the message objects rather than into two id lists held
+  // here. The lists were component state while `messages` is persisted to
+  // sessionStorage, so a refresh restored the text without the status and a
+  // rejected message came back looking delivered -- leaving the visitor
+  // believing the persona had received something it never did.
+  const markMessages = useCallback((ids: string[], status: MessageStatus) => {
+    if (ids.length === 0) return;
+    setMessages(prev =>
+      prev.map(m => (ids.includes(m.id) ? { ...m, status } : m)),
+    );
+  }, [setMessages]);
 
   // Cancel any pending fragment-batch flush timer on unmount so it can't
   // fire a dispatchTurn after the component is gone. Held-but-unflushed
@@ -293,7 +305,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
         // Paint it red for the same reason 400/413/429 are painted red, then
         // re-show the popup (e.g. the session's consent record was cleared
         // between useConsent's mount check and now).
-        setBlockedIds(prev => [...prev, ...groupIds]);
+        markMessages(groupIds, 'blocked');
         onConsentRequired();
         return;
       }
@@ -308,7 +320,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
         // paint exactly those bubbles red so the user sees which pieces
         // didn't go through.
         setWarningMessage(await errorDetail(response, REJECT_FALLBACKS[response.status]));
-        setBlockedIds(prev => [...prev, ...groupIds]);
+        markMessages(groupIds, 'blocked');
         return;
       }
 
@@ -319,7 +331,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
         // model_orchestration comes back as a 200 carrying a system turn.
         // So the bubble is not part of the conversation and is marked as
         // such, alongside a system notice explaining what happened.
-        setBlockedIds(prev => [...prev, ...groupIds]);
+        markMessages(groupIds, 'blocked');
         const text = await errorDetail(
           response,
           response.status >= 500
@@ -356,7 +368,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // rather than after the notice has finished appearing. Strict === false
       // so an older backend that omits the field is treated as "kept".
       if (data.userMessageKept === false) {
-        setWithheldIds(prev => [...prev, ...groupIds]);
+        markMessages(groupIds, 'withheld');
       }
 
       if (data.conversationId !== conversationIdRef.current) {
@@ -426,7 +438,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // reply is unusable, so the bubble stays normal and the reply is what's
       // reported missing.
       if (!serverAccepted) {
-        setBlockedIds(prev => [...prev, ...groupIds]);
+        markMessages(groupIds, 'blocked');
       }
       const errorMessage = createMessage(
         serverAccepted
@@ -546,5 +558,5 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
     if (isHoldingRef.current) scheduleHoldFlush(TYPING_IDLE_MS);
   };
 
-  return { inputMessage, handleInputChange, handleSend, warningMessage, blockedIds, withheldIds, isAwaitingReply: typingCount > 0, isOffline };
+  return { inputMessage, handleInputChange, handleSend, warningMessage, isAwaitingReply: typingCount > 0, isOffline };
 }

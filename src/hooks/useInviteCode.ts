@@ -34,8 +34,8 @@ export function useInviteCode() {
       // postJson sends the cookie, which the server needs in order to set
       // this session's verified flag on the response.
       const response = await postJson('/api/code', {
-        input_code: codeToSend,
-        conversation_id: conversationId  // may be null if no message sent yet — that's fine
+        inputCode: codeToSend,
+        conversationId  // may be null if no message sent yet — that's fine
       });
 
       if (!response.ok) {
@@ -45,7 +45,7 @@ export function useInviteCode() {
         // `code` is now display-only ("Access Granted via X") — it is never
         // sent back to the server as proof of anything. The server already
         // upgraded this session to verified via the Set-Cookie on this response.
-        const verifiedCode = data.returned_result ?? codeToSend;
+        const verifiedCode = data.verifiedCode ?? codeToSend;
         setCode(verifiedCode);
         setInputCode(verifiedCode);
       }

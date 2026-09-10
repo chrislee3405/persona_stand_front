@@ -1,0 +1,53 @@
+// Curated Bootstrap build.
+//
+// `bootstrap/dist/css/bootstrap.min.css` ships every component. An audit of
+// the rendered pages found ~92% of its rules matched nothing, because this
+// app uses Bootstrap for layout, utilities and four components -- not for
+// its widget library. The list below was derived by extracting every class
+// name in src/ and mapping each to the partial that defines it, so nothing
+// is dropped on a guess.
+//
+// If a Bootstrap class ever stops working, it is almost certainly a
+// component partial missing from this file: add its @import and rebuild.
+// The utilities API at the bottom generates the whole utility set, so
+// spacing/display/colour classes never need adding here.
+
+// ---- Required scaffolding (order matters) ---------------------------
+@import "bootstrap/scss/functions";
+@import "bootstrap/scss/variables";
+// `variables-dark` was here to power data-bs-theme="dark" on the navbar.
+// The bar is light now (see .site-bar in styles.css -- the brand mark's
+// charcoal outline was invisible on a dark ground) and `data-bs-theme`
+// appears nowhere in any component. Removed rather than left in with a
+// comment describing a feature that no longer exists.
+@import "bootstrap/scss/maps";
+@import "bootstrap/scss/mixins";
+@import "bootstrap/scss/utilities";
+
+// ---- Base -----------------------------------------------------------
+@import "bootstrap/scss/root";        // the --bs-* custom properties the app re-points
+@import "bootstrap/scss/reboot";
+@import "bootstrap/scss/type";        // .lead, .h4/.h5 used as classes
+
+// ---- Layout ---------------------------------------------------------
+@import "bootstrap/scss/containers";  // .container (also <Container>)
+@import "bootstrap/scss/grid";        // .row, .col-*, .g-5
+@import "bootstrap/scss/helpers";     // .sticky-top, .visually-hidden
+
+// ---- The four components actually rendered --------------------------
+@import "bootstrap/scss/buttons";     // .btn, .btn-primary, .btn-outline-primary, .btn-lg/sm
+@import "bootstrap/scss/transitions"; // .fade -- the dropdown's open animation
+@import "bootstrap/scss/nav";         // .nav, .nav-link, .nav-pills  (<Nav>)
+@import "bootstrap/scss/dropdown";    // <NavDropdown>
+
+// Deliberately NOT imported, because nothing renders them: accordion,
+// alert, badge, breadcrumb, button-group, card, carousel, close, forms,
+// images, list-group, modal, navbar, offcanvas, pagination, placeholders,
+// popover, progress, spinners, tables, toasts, tooltip.
+//
+// `modal` and `close` in particular look like they should be needed --
+// they are not. Both pop-ups are the app's own <BottomSheet>, and both
+// close buttons are hand-rolled (.sheet-close, .chatroom-consent__exit).
+
+// ---- Utilities API (must come last) ---------------------------------
+@import "bootstrap/scss/utilities/api";

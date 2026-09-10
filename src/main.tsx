@@ -1,7 +1,7 @@
 // CSS first, before any component -- so component stylesheets (e.g.
 // Home.css, imported transitively by App) cascade AFTER Bootstrap and can
 // override same-specificity rules like `.container` max-width.
-import 'bootstrap/dist/css/bootstrap.min.css'
+import './bootstrap.scss'   // curated Bootstrap build -- see the file for what is in it and why
 import '@fontsource-variable/inter'   // Inter (variable weight axis) -- set as the app font in styles.css
 import './styles.css'   // global type scale + large-display (QHD/4K) tuning
 

@@ -4,50 +4,72 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>Hang Chi Lee — Full-stack Engineer</title>
+    <!-- GENERIC FALLBACK. No personal content lives in this file. Once
+         /api/site-content resolves, <DocumentHead>
+         (src/components/DocumentHead.tsx) overwrites the title, the
+         description and the og:* tags below from the site_content
+         `personal_statement` row. This generic wording is only what shows
+         for the instant before the JS runs, and what a non-JS crawler
+         sees -- acceptable until there is a real domain (see the og:url
+         note below); a backend-rendered shell is the fix after that. -->
+    <title>Portfolio</title>
 
-    <!-- Tab / bookmark icon. Vite rewrites this src/ path to the hashed
-         build asset, so it does NOT need to live in public/. -->
-    <link rel="icon" type="image/png" href="/src/assets/icons/tab_logo.png" />
-    <link rel="apple-touch-icon" href="/src/assets/icons/tab_logo.png" />
+    <!-- Tab / bookmark icon, served from the CDN rather than bundled. It is
+         the SAME object the navbar brand mark uses (see components/navbar.tsx),
+         so the tab icon and the header icon can never drift apart, and either
+         can be replaced by overwriting one S3 key with no redeploy.
+         %VITE_CDN_BASE% is substituted by Vite at build time -- see the
+         preload note below. -->
+    <link rel="icon" type="image/png" href="%VITE_CDN_BASE%/tools_icon/tab_logo.png" />
+    <link rel="apple-touch-icon" href="%VITE_CDN_BASE%/tools_icon/tab_logo.png" />
 
-    <!-- Tints the browser chrome on Android/Chrome. Matches the navbar
-         exactly (both read the same charcoal -- see --brand-ink in
-         styles.css), so the bar and the page meet with no seam. -->
-    <meta name="theme-color" content="#283030" />
+    <!-- Tints the browser chrome on Android/Chrome. Must match the site bar
+         exactly (--brand-bar in styles.css), or the phone paints a strip of
+         a different colour directly above it. The bar is light because the
+         brand mark's outline is charcoal and disappeared on a dark one. -->
+    <meta name="theme-color" content="#f4f1ec" />
 
-    <!-- One sentence, ~155 chars max: it is what Google prints under the
-         title and what a link preview shows when there is no other copy.
-         REPLACE the wording once the real About copy is written -- keep it
-         first-person-free, concrete, and front-load what you do. -->
+    <!-- GENERIC FALLBACK. <DocumentHead> replaces this at runtime with a
+         ~160-char summary derived from the `personal_statement` body.
+         Keep this wording person-free -- it is a default, not the copy. -->
     <meta
       name="description"
-      content="Full-stack engineer working across cloud infrastructure and applied AI. Portfolio, project write-ups, and an AI persona you can ask about my work."
+      content="A personal portfolio with project write-ups and an AI persona you can chat with."
     />
 
     <!-- ---- Link preview (Open Graph + Twitter) ------------------------
          What LinkedIn, WhatsApp, Slack and iMessage read when this URL is
          pasted. Without these a shared link renders as a bare URL.
 
+         og:site_name / og:title / og:description below are GENERIC
+         FALLBACKS with no personal content -- <DocumentHead> rewrites
+         them from `personal_statement` on load. That rewrite reaches a
+         normal browser but NOT a non-JS crawler; until there is a real
+         domain to share, the generic version is what a crawler gets.
+
          og:image must be an ABSOLUTE url -- a crawler has no page context
          to resolve a relative one -- so it is served from the CDN like
-         every other image on this site rather than from public/. Upload
-         the card to S3 as `about_me/og_image.jpg`; 1200x630 is the size
-         every platform crops from. og:url is deliberately omitted until
-         there is a real domain (server_name is still a catch-all): a wrong
-         canonical url is worse than none, as crawlers fall back to the
-         URL they fetched. -->
+         every other image on this site rather than from public/. It is a
+         FIXED S3 key (`tools_icon/og_img.jpg`) rather than a versioned
+         one, so the card can be re-uploaded over the same object and
+         picked up with a CloudFront invalidation -- no frontend redeploy.
+         For that to work the object must NOT be cached `immutable`: give
+         it a short Cache-Control (e.g. `public, max-age=300`). 1200x630 is
+         the size every platform crops from. og:url is deliberately omitted
+         until there is a real domain (server_name is still a catch-all): a
+         wrong canonical url is worse than none, as crawlers fall back to
+         the URL they fetched. -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Hang Chi Lee" />
-    <meta property="og:title" content="Hang Chi Lee — Full-stack Engineer" />
+    <meta property="og:site_name" content="Portfolio" />
+    <meta property="og:title" content="Portfolio" />
     <meta
       property="og:description"
-      content="Full-stack engineer working across cloud infrastructure and applied AI. Portfolio, project write-ups, and an AI persona you can ask about my work."
+      content="A personal portfolio with project write-ups and an AI persona you can chat with."
     />
-    <meta property="og:image" content="%VITE_CDN_BASE%/about_me/og_image.jpg" />
+    <meta property="og:image" content="%VITE_CDN_BASE%/tools_icon/og_img.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Hang Chi Lee — portfolio and AI persona chat" />
+    <meta property="og:image:alt" content="Portfolio preview card" />
     <meta name="twitter:card" content="summary_large_image" />
 
     <!-- The About hero image is the first thing every visitor sees, but it's
@@ -62,10 +84,32 @@
          slash. No `crossorigin`: a CSS background-image is fetched without
          CORS, so the preload must match that or the browser fetches twice. -->
     <link rel="preconnect" href="%VITE_CDN_BASE%" />
+
+    <!-- Start the site copy downloading alongside the JS bundle instead of
+         after it. Every word on this page comes from this one request, and
+         nothing asked for it until the 388kB bundle had downloaded, parsed
+         and mounted -- measured at 61ms after the script request on
+         localhost, and a whole extra round trip on a real connection. The
+         preload warms the same URL SiteContentProvider then fetches, so it
+         is served from cache. `crossorigin` is required for `as="fetch"`
+         even same-origin, or the browser fetches it twice. -->
+    <link rel="preload" as="fetch" crossorigin href="/api/site-content" />
+    <!-- Two hero files now, framed for the two layouts. `media` makes the
+         browser preload only the one it will actually paint, matching the
+         swap in Home.css -- keep these three breakpoints in step. Preload
+         without `media` would fetch a hero the page never shows. -->
     <link
       rel="preload"
       as="image"
-      href="%VITE_CDN_BASE%/about_me/main_img.jpg"
+      href="%VITE_CDN_BASE%/about_me/main_desk_img.jpg"
+      media="(min-width: 900px)"
+      fetchpriority="high"
+    />
+    <link
+      rel="preload"
+      as="image"
+      href="%VITE_CDN_BASE%/about_me/main_mob_img.jpg"
+      media="(max-width: 899.98px)"
       fetchpriority="high"
     />
   </head>

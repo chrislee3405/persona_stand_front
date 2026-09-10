@@ -24,9 +24,11 @@ import type { CSSProperties } from 'react';
  * 'cover' fills the band and crops; 'fitHeight' shows the whole photo at
  * full height on the left and leaves the right as page background.
  * `focusX/focusY` frame the photo; `zoom` pushes in. A page-background
- * scrim on the right (`scrimStart`..`scrimEnd`, auto-capped to the text
- * column) GUARANTEES the text sits on a clean background no matter the
- * photo or the other values.
+ * scrim on the right fades the photo out and GUARANTEES the text sits on
+ * a clean background no matter the photo or the other values. Where that
+ * fade lands is DERIVED, not configured: it ends exactly at the photo's
+ * own right edge (or at the text column, whichever comes first), and
+ * `scrimFade` only says how long the blend is.
  *
  * Every knob is a plain number and every one is overridable per
  * deployment from the personal_statement row's `hero` / `qualHero` /
@@ -45,8 +47,13 @@ export interface HeroOverrides {
   focusX?: number;     // %   - object-position X (0 left .. 100 right)
   focusY?: number;     // %   - object-position Y (0 top .. 100 bottom)
   zoom?: number;       // >=1 - push into the focus point
-  scrimStart?: number; // %   - hero width where the page-bg scrim starts
-  scrimEnd?: number;   // %   - hero width where it's fully page-bg
+  scrimFade?: number;  // %   - length of the photo -> page-bg blend
+  /** @deprecated Ignored -- the scrim's position is derived from where
+   *  the photo actually ends. See `scrimFade`. Rows that still carry
+   *  these keys parse fine; the values simply do nothing. */
+  scrimStart?: number;
+  /** @deprecated Ignored. See `scrimFade`. */
+  scrimEnd?: number;
   textWidth?: number;  // %   - text column width on the right
   mobileFocusX?: number; // % - backdrop horizontal slice at <= 900px
   tinyFocusX?: number;   // % - backdrop horizontal slice at <= 480px
@@ -105,15 +112,25 @@ export const HERO_DEFAULTS = {
    *  UP -> tighter on the subject.  DOWN -> more of the scene. */
   zoom: 1.0,
 
-  /** Right-side page-background scrim, as % of the hero's own width. The
-   *  photo shows untouched up to `scrimStart`, then the page background
-   *  paints over it, fully opaque by `scrimEnd`. `scrimEnd` is auto-capped
-   *  to the text column's left edge (100 - textWidth), so the text is
-   *  ALWAYS on a clean background whatever you set here.
-   *  scrimStart DOWN -> background reaches further left (photo quieter).
-   *  scrimEnd   DOWN -> sharper hand-off;  UP -> softer, longer blend. */
-  scrimStart: 44,
-  scrimEnd: 58,
+  /** How long the photo -> page-background blend is, as % of the PHOTO's
+   *  own width -- not the band's, so the same fraction of the picture is
+   *  washed on every display instead of a third of it on an ultrawide.
+   *  Where it SITS is not a knob: the scrim reaches full page
+   *  background exactly at the photo's right edge, or at the text
+   *  column's inner edge if the photo runs past it -- so the text is
+   *  ALWAYS on a clean background and the photo ALWAYS feathers out.
+   *
+   *  This replaced a `scrimStart`/`scrimEnd` pair of fixed percentages,
+   *  which were only correct at one viewport width. In 'fitHeight' mode
+   *  the photo's width is `bandHeight x aspect`, and once `heightMax`
+   *  stops the band growing, that width shrinks as a PROPORTION of an
+   *  ever-wider band -- so on a display past roughly 2900px the photo
+   *  ended to the LEFT of a scrim still pinned at 44%, and its edge went
+   *  hard against bare page background. The derived version tracks it.
+   *
+   *  UP -> softer, longer hand-off.  DOWN -> tighter, more photo.
+   */
+  scrimFade: 22,
 
   /** Text column width on the right, % of the page container. Also the
    *  hard right limit the scrim can reach.
@@ -139,9 +156,9 @@ export type HeroConfig = typeof HERO_DEFAULTS;
 export const QUAL_HERO_DEFAULTS: HeroConfig = {
   ...HERO_DEFAULTS,
   focusX: 100,     // photo anchored to the right edge (subject is far right)
-  textWidth: 56,   // wide text column -- ok for the scrim to cover more of
-  scrimStart: 26,  // the photo's left/centre since the subject sits far right
-  scrimEnd: 46,
+  textWidth: 56,   // wide text column; the scrim covers whatever of the
+                   // photo's left/centre runs past it, which is fine here
+                   // because the subject sits far right
 };
 
 /** Certifications banner: same orientation as the hero (image left, text
@@ -152,9 +169,6 @@ export const CERT_HERO_DEFAULTS: HeroConfig = { ...HERO_DEFAULTS };
 
 /** Resolved hero config -> inline CSS custom properties for the <section>. */
 export function heroVars(c: HeroConfig): CSSProperties {
-  // The scrim may never finish to the right of where the text begins.
-  const scrimEnd = Math.min(c.scrimEnd, 100 - c.textWidth);
-  const scrimStart = Math.min(c.scrimStart, scrimEnd - 1);
   return {
     '--hero-bg-size': c.fit === 'fitHeight' ? 'auto 100%' : 'cover',
     '--hero-h': `${c.height}vw`,
@@ -165,8 +179,8 @@ export function heroVars(c: HeroConfig): CSSProperties {
     // zoom only makes sense for 'cover'; in 'fitHeight' it would re-widen
     // the photo back under the text, so force it to 1 there.
     '--hero-zoom': c.fit === 'fitHeight' ? '1' : String(Math.max(1, c.zoom)),
-    '--hero-scrim-start': `${scrimStart}%`,
-    '--hero-scrim-end': `${scrimEnd}%`,
+    // Unitless: Home.css multiplies it by the photo's own width.
+    '--hero-scrim-fade': String(c.scrimFade),
     '--hero-text-width': `${c.textWidth}%`,
     '--hero-mobile-focus-x': `${c.mobileFocusX}%`,
     '--hero-tiny-focus-x': `${c.tinyFocusX}%`,
@@ -185,17 +199,26 @@ export function heroVars(c: HeroConfig): CSSProperties {
  *  bottom and lights the last section whose top has passed the line. */
 export const SECTIONS = [
   { id: 'about', label: 'About Me' },
-  { id: 'qualifications', label: 'Qualifications & Awards' },
-  { id: 'certifications', label: 'Certifications' },
+  { id: 'certifications', label: 'Certification & Award' },
   { id: 'projects', label: 'Projects' },
   { id: 'journey', label: 'My Journey' },
   { id: 'contact', label: 'Contact Me' },
 ] as const;
 
+/** Sections that no longer have a heading of their own but whose old URL
+ *  must keep working. `qualifications` used to be a top-level section; its
+ *  degrees now render inside About and its awards merged into
+ *  "Certification & Award", so /qualifications and /#qualifications point
+ *  at whichever section absorbed them. App.tsx builds the redirects from
+ *  here, the same way it does from SECTIONS. */
+export const RETIRED_SECTIONS = [
+  { id: 'qualifications', redirectTo: 'certifications' },
+] as const;
+
 /** Just the ids, in the same order -- what the scroll-spy iterates. */
 export const SECTION_IDS = SECTIONS.map(s => s.id);
 
-/** Height of the sticky navbar (a custom `.bg-dark.sticky-top` bar: Bootstrap
+/** Height of the sticky navbar (a custom `.site-bar.sticky-top` bar: Bootstrap
  *  `py-3` plus one row of nav pills). The three scroll constants below are all
  *  measured from this, so changing the navbar's padding or font size only
  *  needs this number updated -- previously each carried its own copy of "~72px"

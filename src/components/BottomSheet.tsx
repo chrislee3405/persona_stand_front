@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode, RefObject } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 /**
  * The modal bottom-sheet shell shared by the Journey and Project pop-ups:
@@ -53,6 +54,13 @@ export default function BottomSheet({
     if (open && scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [open, scrollRef]);
 
+  // Moves focus in on open, cycles Tab inside the panel, and restores focus
+  // to the card that opened the sheet on close. Without this the panel was
+  // `aria-modal` in name only -- four Tab presses walked out of an open
+  // sheet and onto the skip link, behind a backdrop the visitor cannot see
+  // past. Esc stays below, with the scroll lock it has to be unwound with.
+  useFocusTrap(panelRef, open);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -61,10 +69,35 @@ export default function BottomSheet({
     document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
+  /**
+   * Make the browser's Back button close the sheet.
+   *
+   * Opening a sheet pushes one history entry; Back pops it and we close.
+   * Closing any other way (Esc, the ✕, the backdrop) pops that entry back
+   * off, so the sheet never leaves a dead step behind in the history.
+   *
+   * Without this, Back from an open sheet left the site entirely -- the
+   * behaviour phone users least expect, since a full-screen panel reads
+   * as a page. Deliberately a bare `pushState` rather than a router
+   * navigation: the sheet is not a route, and pushing one would unmount
+   * the page underneath it.
+   */
+  useEffect(() => {
+    if (!open) return;
+    window.history.pushState({ sheet: true }, '');
+    const onPop = () => onClose();
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      // Closed by something other than Back -- drop the entry we added, so
+      // Back still goes where the visitor came from.
+      if (window.history.state?.sheet) window.history.back();
     };
   }, [open, onClose]);
 

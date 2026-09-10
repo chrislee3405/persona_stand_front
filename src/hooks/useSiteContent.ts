@@ -14,6 +14,14 @@ export interface SiteContentValue {
   journeyDetails: Record<string, unknown>;
   projectDetails: Record<string, unknown>;
   loading: boolean;
+  /** True when the fetch failed (after its one retry) rather than returning
+   *  an empty payload. The two used to be indistinguishable: a backend
+   *  outage rendered exactly the same "No projects content yet." page as a
+   *  database with nothing in it. Consumers must not treat empty-because-
+   *  broken as empty-because-unconfigured -- see <SectionState>. */
+  error: boolean;
+  /** Re-runs the fetch. Wired to the retry button in the failure state. */
+  retry: () => void;
 }
 
 /**
@@ -33,6 +41,8 @@ export const SiteContentContext = createContext<SiteContentValue>({
   journeyDetails: {},
   projectDetails: {},
   loading: false,
+  error: false,
+  retry: () => {},
 });
 
 /**

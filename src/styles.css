@@ -51,6 +51,9 @@
                       there is one place to start from when the palette
                       moves off Bootstrap's default blue. */
   --brand-ink: #283030;
+  /* The site bar. Light, so the charcoal in the logo has something to
+     read against -- see the .site-bar note below. */
+  --brand-bar: #f4f1ec;
   --brand-accent: #f08000;
   /* The same orange, darkened until it passes AA as TEXT on white
      (#f08000 is only 2.7:1 -- fine for a fill or a rule, not for words).
@@ -76,6 +79,31 @@
   --bs-link-color-rgb: 179, 89, 0;
   --bs-link-hover-color: #8f4700;
   --bs-link-hover-color-rgb: 143, 71, 0;
+
+  /* ---- Spacing scale ------------------------------------------------
+     A shared rhythm to reach for instead of picking a new value per
+     component. Ratio ~1.5; the middle three cover almost everything. */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2.25rem;
+  --sp-7: 3.5rem;
+
+  /* ---- Surfaces -----------------------------------------------------
+     Two elevations above the page, so a card can sit on another card
+     without inventing a colour. Bootstrap's --bs-body-bg is the page. */
+  --surface-1: #ffffff;          /* cards, sheets, the navbar dropdown */
+  --surface-2: #f4f2ef;          /* a panel inside a card; hover wash */
+  --surface-line: var(--bs-border-color, #dee2e6);
+
+  /* ---- Shadows ------------------------------------------------------
+     Two steps only: `raise` for anything resting on the page, `lift` for
+     the hover/active state of the same thing. Previously every component
+     invented its own, which is why the app had three shadow idioms. */
+  --shadow-raise: 0 2px 8px rgba(31, 38, 36, 0.08);
+  --shadow-lift: 0 10px 22px rgba(31, 38, 36, 0.16);
 
   /* Reading ink for content paragraphs (.lead). Bootstrap's muted grey
      (#6c757d) sits at 4.7:1 on white -- a bare AA pass, and it was being
@@ -124,6 +152,128 @@
 }
 
 /* ===================================================================
+   Long-token wrapping
+
+   Every string on this page comes out of a JSONB column, so any of it can
+   contain something with no break opportunity in it: a URL, a package
+   name, a hyphen-free identifier, a very long surname. Without this a
+   160-character token measured 2039px of scrollWidth inside a 430px
+   column -- and because the overflow is clipped rather than scrollable,
+   the text simply was not there. Silent truncation of real content.
+
+   `anywhere` rather than `break-word`: it also lets the token count
+   toward the element's min-content width, so a flex/grid track sized from
+   its content does not blow out before the break is applied.
+   =================================================================== */
+.lead,
+.about__name,
+.about__title,
+.cred__title,
+.cred__org,
+.cred__detail,
+.jtl__title,
+.jtl__org,
+.jtl__caption,
+.psheet__list li,
+.jsheet__body li,
+.prose__list li,
+.site-footer__note {
+  overflow-wrap: anywhere;
+}
+
+/* ===================================================================
+   Footer
+   =================================================================== */
+.site-footer__left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1, 0.25rem) var(--sp-3, 0.75rem);
+}
+.site-footer__copy {
+  font-weight: 600;
+  color: var(--ink-body, #4a5259);
+}
+.site-footer__note {
+  font-size: 0.86rem;
+  color: var(--bs-secondary-color, #6c757d);
+}
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4, 1rem);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9rem;
+}
+
+/* ===================================================================
+   Skip link
+
+   First focusable thing on the page, off-screen until focused. Without it
+   a keyboard user tabs through all five nav items before reaching content,
+   on every visit.
+   =================================================================== */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -4rem;                 /* parked off-screen, NOT display:none --
+                                 a hidden element cannot take focus */
+  z-index: 1100;              /* above the sticky navbar (1020) */
+  padding: 0.6rem 1rem;
+  border-radius: 0 0 0.5rem 0.5rem;
+  background: var(--brand-ink, #283030);
+  color: #fff;
+  text-decoration: none;
+  transition: top 0.12s ease;
+}
+.skip-link:focus-visible {
+  top: 0;
+  outline: 2px solid var(--brand-accent, #f08000);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skip-link { transition: none; }
+}
+
+/* ===================================================================
+   Navbar brand
+
+   The bar used to be nav links pushed right with an empty left half. The
+   mark is the same CDN object the favicon uses, so the tab icon and the
+   header icon are one asset.
+   =================================================================== */
+.site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--brand-ink, #283030);
+  text-decoration: none;
+  /* the bar sets --bs-body-font-size for its links; the name is chrome */
+  font-size: 1rem;
+}
+.site-brand__mark {
+  width: 2rem;
+  height: 2rem;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+.site-brand__name {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.site-brand:hover .site-brand__name,
+.site-brand:focus-visible .site-brand__name {
+  color: var(--brand-accent, #f08000);
+}
+@media (max-width: 22rem) {
+  /* very narrow phones: the mark alone still identifies the site */
+  .site-brand__name { display: none; }
+}
+
+/* ===================================================================
    Floating chat launcher (components/ChatLauncher.tsx)
 
    Fixed to the bottom-right corner, so it stays put through any amount of
@@ -161,20 +311,18 @@
   background: var(--brand-accent, #f08000);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
 
-  /* `translate` and `scale` as their own properties, not packed into
-     `transform`. That is what makes the handover read as liquid rather
-     than as a box sliding: they are given DIFFERENT durations and
-     easings, so the blob is still stretching after it has arrived, and
-     settles late. One combined `transform` can only ease as a single
-     rigid unit. It also leaves `transform` free for the hover lift,
-     which then composes instead of fighting (the engine applies
-     translate, then scale, then transform). */
-  translate: 0 0;
-  scale: 1 1;
+  /* The handover used to be a 620ms squash-and-stretch, with `translate`
+     and `scale` on offset timings so the button was still wobbling after
+     it arrived. It was the most elaborate motion in the app, on the least
+     important control -- ornament on a utility button, and it pulled the
+     eye during scrolling. Now a 200ms fade with a slight scale: enough to
+     read as an arrival, over before it becomes the subject.
+     `scale` stays its own property so `transform` is free for the hover
+     lift, which then composes instead of fighting it. */
+  scale: 1;
   transition:
-    translate 0.46s cubic-bezier(0.22, 1, 0.36, 1),
-    scale 0.62s cubic-bezier(0.34, 1.55, 0.5, 1),   /* overshoots, then settles */
-    opacity 0.3s ease,
+    scale 0.2s ease-out,
+    opacity 0.2s ease-out,
     visibility 0s linear 0s,
     transform 0.15s ease,
     box-shadow 0.15s ease,
@@ -219,12 +367,132 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  translate: -26px -10px;
-  scale: 2.15 0.6;
+  scale: 0.82;
   transition:
-    translate 0.4s cubic-bezier(0.5, 0, 0.75, 0),
-    scale 0.4s cubic-bezier(0.5, 0, 0.75, 0),
-    opacity 0.28s ease,
+    scale 0.2s ease-in,
+    opacity 0.2s ease-in,
+    visibility 0s linear 0.2s;
+}
+
+/* ---- One-off introduction ------------------------------------------
+   Played by ChatLauncher.tsx the first time this button appears, and only
+   for a visitor who has never opened the chatroom. A one-second wag, then
+   the label for two seconds, then it retracts into the button.
+
+   The wag is on `transform` while the arrival/exit uses `scale` as its
+   own property -- the engine applies translate, then scale, then
+   transform, so the two compose rather than overwrite one another. Two
+   half-second passes make the second asked for, and it stops on its own:
+   a control that keeps twitching reads as broken, not inviting. */
+@keyframes chat-launcher-wag {
+  0%, 100% { transform: none; }
+  15%      { transform: translateX(-3px) rotate(-6deg); }
+  30%      { transform: translateX(3px) rotate(6deg); }
+  45%      { transform: translateX(-2.5px) rotate(-4.5deg); }
+  60%      { transform: translateX(2.5px) rotate(4.5deg); }
+  75%      { transform: translateX(-1.5px) rotate(-2.5deg); }
+  90%      { transform: translateX(1.5px) rotate(2.5deg); }
+}
+.chat-launcher.is-wagging {
+  animation: chat-launcher-wag 0.5s ease-in-out 2;
+}
+
+/* The bubble, sitting off the button's TOP-LEFT corner: up and clear of
+   the circle, with its right end reaching back over the button so the
+   tail can drop onto it. The mirror of the About-section bubble, which
+   opens off its icon's top-right with the tail at bottom-left.
+
+   Up-and-left is the only diagonal available -- the button is pinned to
+   the bottom-right corner of the viewport -- and going up rather than
+   straight left keeps the label out from under the thumb that is about
+   to press the circle.
+
+   Anchored to the button itself (a position:fixed element is a
+   containing block for its absolute children), so it needs none of the
+   measuring ChatCta's bubble does -- unlike the name row, this button's
+   position is known to the stylesheet. */
+.chat-launcher__hint {
+  position: absolute;
+  /* Where the tail's point lands, measured from the button's LEFT edge:
+     about a third of the way across, so it comes down on the circle's
+     upper-left arc. Anywhere further left and it would be pointing at
+     the empty corner beside a round button; anywhere further right and
+     the bubble stops reading as "up and to the left" and becomes
+     "directly above". */
+  --tail-from-btn-left: 1.05rem;
+  /* The bubble's right edge, derived from that: the tail's own offset
+     (0.25rem below) plus its 6px half-width comes to 0.625rem, so this
+     is the one place to edit if the tail moves. Because the tail sits in
+     the CORNER rather than inset along the bottom edge, the body of the
+     bubble is pulled left until its right edge stops just short of the
+     circle's centre -- the tail stays put over the arc either way. */
+  right: calc(100% - var(--tail-from-btn-left) - 0.625rem);
+  /* Deliberately tight. The tail hangs 6px below this edge, and at the
+     tail's x the circle's surface has already curved ~2px down from the
+     button's top edge -- so a wider gap here would leave the point
+     hanging in mid-air. This lets it just bite into the circle. There is
+     nothing to collide with on the left, where the bubble actually is. */
+  bottom: calc(100% + 0.1rem);
+  z-index: 1;
+  /* Sized to its text, so a short label is not stranded in a wide empty
+     box; it wraps only when the cap below forces it to. The cap is what
+     keeps it on screen at 320px: 2.65rem of the subtracted 4rem is the
+     offset from the viewport's right edge, the rest is the left gutter. */
+  width: max-content;
+  max-width: min(14rem, calc(100vw - 4rem));
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.5rem;
+  background: var(--brand-ink, #283030);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  /* Nothing here is a target: the whole point is the circle behind it,
+     and a bubble that ate the tap would be a bug, not a feature. */
+  pointer-events: none;
+  box-shadow: var(--shadow-lift, 0 10px 22px rgba(31, 38, 36, 0.16));
+  translate: 0 0;
+  scale: 1;
+  transform-origin: bottom right;   /* it grows from, and collapses toward, the tail */
+  transition:
+    opacity 0.4s ease,
+    translate 0.4s ease,
+    scale 0.4s ease,
+    visibility 0s linear 0s;
+}
+/* The tail, hanging off the bubble's bottom-right CORNER and pointing
+   down at the circle below it. `right` here feeds the bubble's own
+   offset above -- change one and change the other. It is 0.25rem rather
+   than flush so the triangle springs from the straight part of the edge
+   instead of out of the 0.5rem corner radius. */
+.chat-launcher__hint::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0.25rem;
+  border: 6px solid transparent;
+  border-top-color: var(--brand-ink, #283030);
+}
+
+/* Both ends of the sequence: closed before the wag finishes, and closed
+   again once its two seconds are up. The three properties move together
+   so it reads as the bubble retracting into the button rather than a box
+   switching off -- it fades, drifts down and right toward the circle,
+   and shrinks toward the tail.
+
+   `visibility` is stepped and HELD for the full fade, the same technique
+   the bottom sheets use. Without it the bubble would blink out on the
+   first frame instead of fading. */
+.chat-launcher__hint.is-gone {
+  opacity: 0;
+  visibility: hidden;
+  translate: 0.25rem 0.3rem;
+  scale: 0.88;
+  transition:
+    opacity 0.4s ease,
+    translate 0.4s ease,
+    scale 0.4s ease,
     visibility 0s linear 0.4s;
 }
 
@@ -233,12 +501,48 @@
   .chat-launcher.is-hidden { transition: none; }
   .chat-launcher:hover,
   .chat-launcher:focus-visible { transform: none; }
-  /* no morph to wait for, so nothing to stretch or hold visible */
-  .chat-launcher.is-hidden { translate: 0 0; scale: 1 1; }
+  /* no morph to wait for, so nothing to scale or hold visible */
+  .chat-launcher.is-hidden { scale: 1; }
+  /* The introduction still RUNS on the same timings -- it is information,
+     not decoration -- it just cuts between its states instead of
+     animating. No wag at all: a control that shakes itself is exactly
+     what this preference is asking us not to do. */
+  .chat-launcher.is-wagging { animation: none; }
+  .chat-launcher__hint,
+  .chat-launcher__hint.is-gone {
+    transition: none;
+    translate: 0 0;
+    scale: 1;
+  }
 }
 
 html {
   font-size: clamp(16px, 15.6px + 0.12vw, 16.5px);
+
+  /* ---- No horizontal scrollbar ------------------------------------
+     The full-bleed bands (.hero-band) escape their container with
+     `margin-inline: calc(50% - 50vw)`, and that expression is off by the
+     width of the scrollbar: `50vw` is half the viewport INCLUDING a
+     classic scrollbar, while `50%` is half the container's content box,
+     which excludes it. So the band came out exactly one scrollbar wider
+     than the space available -- measured as a constant 8px of horizontal
+     page scroll at 768, 1280, 2560 and 3440, on every browser with a
+     classic (non-overlay) scrollbar. Phones never showed it because their
+     scrollbars are overlays.
+
+     `clip`, NOT `hidden`: `hidden` would make html a scroll container,
+     which breaks `position: sticky` on the navbar. `clip` refuses to show
+     or scroll the overflow and leaves sticky alone. Vertical scrolling is
+     untouched -- this is overflow-X only.
+
+     There is no pure-CSS way to subtract the scrollbar here and centre the
+     band exactly: `calc(100vw - 100%)` needs to resolve on `html`, and a
+     registered `<length>` property rejects the percentage (it computes to
+     the 0px initial value), while an unregistered one inherits the `100%`
+     unresolved and re-resolves it against whichever element reads it.
+     The band is therefore still half a scrollbar (~7.5px) left of true
+     centre. That is imperceptible; the scrollbar was not. */
+  overflow-x: clip;
 }
 
 /* Respect a user who has bumped their browser's default font size: fall
@@ -304,40 +608,54 @@ h4, .h4, h5, .h5 {
 
    The background is repainted in the brand charcoal so the bar, the tab
    icon and the mobile browser chrome (`theme-color`) are all one colour.
-   `!important` because Bootstrap's `.bg-dark` utility carries it too. */
-.sticky-top.bg-dark {
-  font-size: 1rem;
-  background-color: var(--brand-ink) !important;
+   No `!important` needed now that the bar has its own class rather than
+   fighting Bootstrap's `.bg-dark` utility. */
+/* ===================================================================
+   Site bar
+
+   LIGHT, not the brand charcoal it used to be. The brand mark's outline
+   is #283030 -- the exact charcoal the bar was painted in -- so those
+   strokes sat at 1.00:1 against it and the tiger read as a few loose
+   orange traces. No dark bar can fix that: near-black gives the outline
+   1.38:1, deep navy 1.17:1, a mid grey 2.35:1, all under the 3:1 a
+   graphical object needs. Only a light ground separates it, and this one
+   gives 11.98:1.
+
+   The tint is warmed toward the accent rather than a neutral grey, so
+   the bar reads as part of the palette. Keep --brand-bar and the
+   `theme-color` meta in index.html in step: they are the same surface,
+   one painted by the page and one by the phone's browser chrome.
+   =================================================================== */
+.site-bar {
+  font-size: 1rem;                 /* chrome, not content -- see note above */
+  background-color: var(--brand-bar, #f4f1ec);
+  /* The page behind is white, so the bar needs its own edge to read as a
+     bar rather than as a band of slightly grey page. */
+  border-bottom: 1px solid rgba(40, 48, 48, 0.1);
 
   --bs-dropdown-link-active-bg: var(--brand-accent-ink);
   --bs-dropdown-link-hover-bg: rgba(240, 128, 8, 0.12);
 }
 
-/* The bar carries data-bs-theme="dark", which re-declares Bootstrap's link
-   colours on that subtree -- so the :root re-point above never reached it
-   and the nav stayed Bootstrap blue while everything else turned orange.
-
-   These have to land on `.nav` itself, not on the bar: Bootstrap declares
-   `--bs-nav-link-color: var(--bs-link-color)` ON `.nav`, so a value
-   inherited from the parent is shadowed before a link ever reads it.
-
-   Light neutral rather than orange -- orange type on charcoal is muddy,
-   and the accent is better spent on the single active pill. #d5dbda on
-   #283030 is 9.6:1. */
-.sticky-top.bg-dark .nav {
-  --bs-nav-link-color: #d5dbda;
-  --bs-nav-link-hover-color: #ffffff;
+/* Link colours have to land on `.nav` itself, not on the bar: Bootstrap
+   declares `--bs-nav-link-color: var(--bs-link-color)` ON `.nav`, so a
+   value inherited from the parent is shadowed before a link ever reads
+   it. Ink rather than orange -- the accent is better spent on the one
+   active pill. #283030 on #f4f1ec is 11.98:1. */
+.site-bar .nav {
+  --bs-nav-link-color: var(--brand-ink, #283030);
+  --bs-nav-link-hover-color: var(--brand-accent-ink, #b35900);
 }
 /* The collapsed "Menu" toggle is a .nav-link too, but NavDropdown renders
    it as an <a> that reads --bs-nav-link-color only on hover in some
    states; pin both so it never falls back to the theme blue. */
-.sticky-top.bg-dark .dropdown-toggle.nav-link {
-  color: #d5dbda;
+.site-bar .dropdown-toggle.nav-link {
+  color: var(--brand-ink, #283030);
 }
-.sticky-top.bg-dark .dropdown-toggle.nav-link:hover,
-.sticky-top.bg-dark .dropdown-toggle.nav-link:focus,
-.sticky-top.bg-dark .dropdown-toggle.nav-link.show {
-  color: #ffffff;
+.site-bar .dropdown-toggle.nav-link:hover,
+.site-bar .dropdown-toggle.nav-link:focus,
+.site-bar .dropdown-toggle.nav-link.show {
+  color: var(--brand-accent-ink, #b35900);
 }
 
 /* ---- Wide monitors -------------------------------------------------
