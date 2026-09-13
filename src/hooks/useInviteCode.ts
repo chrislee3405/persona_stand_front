@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { BaseSyntheticEvent } from 'react';
-import { useChat } from '../context/ChatContext';
+import { useChat } from './useChat';
 import { postJson, errorDetail } from '../lib/api';
 
 /**

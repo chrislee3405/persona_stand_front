@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { BaseSyntheticEvent, ChangeEvent } from 'react';
-import { useChat, type Message, type MessageStatus } from '../context/ChatContext';
+import { useChat, type Message, type MessageStatus } from './useChat';
 import { postJson, errorDetail } from '../lib/api';
 import {
   TYPING_MS_PER_CHAR,
@@ -43,6 +43,26 @@ const MAX_PENDING_MESSAGES: Record<'guest' | 'invite', number> = {
 // instant feedback instead of a round trip. Exported so the input in
 // Chatroom can set its maxLength from the same source.
 export const MAX_MESSAGE_LENGTH = 750;
+
+// Hard ceiling on one chat request, milliseconds.
+//
+// `fetch` has no timeout. A socket that stalls without closing -- a phone
+// leaving wifi, an intermediary dropping the connection without an RST --
+// leaves the promise pending forever, so dispatchTurn's `finally` never runs.
+// That left `pendingCount` permanently elevated (after two stalls a guest is
+// stuck at the cap and every further send shows the pending-limit warning),
+// the "typing" bubble up forever, and -- worst -- `conversationIdReadyRef`
+// unresolved, which makes EVERY later message in the tab block forever at
+// `await waitForPreviousSend`. The chatroom died silently for the rest of the
+// tab's life.
+//
+// Set ABOVE nginx's proxy_read_timeout (120s in persona_stand_front/nginx.conf)
+// so the server's own 504 normally wins and the visitor gets its message
+// rather than a generic connection error; this only fires when no response is
+// coming at all. That timeout is in turn above the backend's
+// TURN_DEADLINE_SECONDS (100s), so the three are ordered
+// backend < proxy < client and each layer gets to report its own failure.
+const CHAT_REQUEST_TIMEOUT_MS = 150_000;
 
 const PENDING_LIMIT_WARNING = "Too many messages waiting for a reply — please wait a moment before sending another.";
 const MESSAGE_TOO_LONG_WARNING = `Message is too long (max ${MAX_MESSAGE_LENGTH} characters).`;
@@ -276,8 +296,11 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       };
 
       // postJson supplies the method, JSON header and the httpOnly session
-      // cookie (see lib/api.ts).
-      const postChat = (endpoint: string) => postJson(endpoint, requestBody);
+      // cookie (see lib/api.ts). A fresh signal per attempt, so the 401
+      // guest-retry below gets its own full budget rather than inheriting
+      // whatever is left of the first one's.
+      const postChat = (endpoint: string) =>
+        postJson(endpoint, requestBody, AbortSignal.timeout(CHAT_REQUEST_TIMEOUT_MS));
 
       armWaitTyping();
       let response = await postChat(isVerified ? '/api/invitechat' : '/api/guestchat');
@@ -432,18 +455,23 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // above with its own specific message.
       console.error("Chat request failed:", error);
       setIsOffline(true);
-      // Two very different failures land here. A rejected fetch means the
-      // request never reached the backend, so the message was never stored --
-      // mark it. A malformed 200 means the backend DID store it and only the
-      // reply is unusable, so the bubble stays normal and the reply is what's
-      // reported missing.
+      // Three failures land here now. A rejected fetch means the request never
+      // reached the backend, so the message was never stored -- mark it. A
+      // malformed 200 means the backend DID store it and only the reply is
+      // unusable, so the bubble stays normal and the reply is what's reported
+      // missing. A timeout is the honest third case: we genuinely do not know
+      // whether it arrived, so it is reported as such rather than claimed
+      // either way.
+      const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
       if (!serverAccepted) {
         markMessages(groupIds, 'blocked');
       }
       const errorMessage = createMessage(
         serverAccepted
           ? "That reply didn't come through properly. Your message was sent."
-          : "Couldn't reach the server. Check your connection and try again.",
+          : timedOut
+            ? "That took too long and the connection gave up. Please try sending it again."
+            : "Couldn't reach the server. Check your connection and try again.",
         'system'
       );
       setMessages(prev => [...prev, errorMessage]);

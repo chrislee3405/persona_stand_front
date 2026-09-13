@@ -127,6 +127,47 @@
   outline-offset: 3px;
 }
 
+/* ---- Name-row actions: chat icon + CV button (Home.tsx) -------------
+   One inline group so the pair wraps together. Static on purpose -- see
+   the .chat-cta note above: the hint bubble's containing block has to
+   stay .about__namerow. */
+.about__ctas {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+/* The CV button. Same size and silhouette as the chat icon so the two read
+   as a pair, but ink rather than orange: chatting is the page's primary
+   action and the CV the secondary one, and two orange circles side by side
+   left nothing but a small white glyph to tell them apart. */
+.resume-cta {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  background: var(--brand-ink, #283030);
+  box-shadow: var(--shadow-raise, 0 2px 8px rgba(31, 38, 36, 0.08));
+  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.resume-cta img {
+  display: block;
+  width: 56%;
+  height: 56%;
+  object-fit: contain;
+}
+.resume-cta:hover,
+.resume-cta:focus-visible {
+  transform: translateY(-2px);
+  background: #3a4444;
+  box-shadow: var(--shadow-lift, 0 10px 22px rgba(31, 38, 36, 0.16));
+}
+.resume-cta:focus-visible {
+  outline: 3px solid var(--brand-accent, #f08000);
+  outline-offset: 3px;
+}
+
 /* The hint bubble, sitting ABOVE and to the RIGHT of the icon with its
    tail at the bottom-left corner, pointing back down at the button.
 
@@ -226,9 +267,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-cta__btn { transition: none; }
+  .chat-cta__btn,
+  .resume-cta { transition: none; }
   .chat-cta__btn:hover,
-  .chat-cta__btn:focus-visible { transform: none; }
+  .chat-cta__btn:focus-visible,
+  .resume-cta:hover,
+  .resume-cta:focus-visible { transform: none; }
   .chat-cta__hint,
   .chat-cta__hint.is-gone {
     transition: none;
@@ -260,20 +304,6 @@
   text-transform: uppercase;
   color: var(--bs-secondary-color, #6c757d);
   margin: 0 0 var(--sp-3, 0.75rem);
-}
-
-/* Chat CTA and CV side by side; they wrap to their own lines before
-   getting cramped. Centred on phones, left-aligned from sm up -- the
-   buttons are inline-block, so the wrapper's text-align used to do this,
-   but a flex row needs justify-content instead. */
-.about__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3, 0.75rem);
-  justify-content: center;
-}
-@media (min-width: 576px) {
-  .about__actions { justify-content: flex-start; }
 }
 
 /* ===================================================================

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BaseSyntheticEvent, KeyboardEvent } from 'react';
-import { useChat } from '../context/ChatContext';
+import { useChat } from '../hooks/useChat';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useConsent } from '../hooks/useConsent';
 import { useInviteCode } from '../hooks/useInviteCode';
 import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
 import { useSiteContent } from '../hooks/useSiteContent';
+import Prose from '../components/Prose';
 import { assetUrl } from '../lib/assetUrl';
 import { markChatVisited } from '../lib/chatVisited';
 import wallpaper from '../assets/icons/chatroom_wallpaper.jpg';
@@ -28,9 +29,17 @@ interface ChatroomContent {
  */
 const PERSONA_NAME_FALLBACK = 'AI Persona';
 
-// Shown only if the GET /api/consent response has no conditionText at all
-// (e.g. consent_policy is somehow empty) -- should be rare in practice
-// since app/main.py seeds an initial policy row on startup.
+// Shown when GET /api/consent carries no usable terms. Three causes, all of
+// which land here: consent_policy has no row, the newest row's terms are
+// malformed, or the backend could not be reached at all.
+//
+// NOT rare, and not a corner case. The backend no longer seeds a placeholder
+// policy at startup -- that placeholder used to become the live legal notice
+// every visitor agreed to on the first boot of a new environment -- so a
+// database nobody has seeded reaches exactly this state, by design.
+// useConsent supplies the same sentence as its `error`, which is what shows
+// when the visitor tries to act; this constant is the card's own standing
+// text.
 const CONSENT_TEXT_UNAVAILABLE = "Consent terms are currently unavailable. Please try again later.";
 
 export default function Chatroom() {
@@ -57,10 +66,10 @@ export default function Chatroom() {
   // useChatDispatch so it can pick the invite vs guest endpoint).
   const { code, inputCode, setInputCode, isVerified, isVerifyingCode, verifyCode, error: codeError } = useInviteCode();
 
-  // Consent gate: whether the user has agreed, the policy text for the popup,
-  // the submitting flag, agree/revoke actions, and whether the mount-time
-  // consent check couldn't reach the backend.
-  const { consented, consentText, isSubmittingConsent, agreeConsent, revokeConsent, checkFailed } = useConsent();
+  // Consent gate: whether the user has agreed, the policy terms for the popup
+  // ({header, condition}), the submitting flag, agree/revoke actions, and
+  // whether the mount-time consent check couldn't reach the backend.
+  const { consented, consentTerms, isSubmittingConsent, agreeConsent, revokeConsent, checkFailed, error: consentError } = useConsent();
 
   // The terms popup is now dismissible: "I Don't Agree" sets this, which hides
   // the overlay and lets the visitor read the chatroom. It stays hidden until
@@ -68,10 +77,15 @@ export default function Chatroom() {
   // back, and keep coming back, until "I Agree" is clicked.
   const [consentDismissed, setConsentDismissed] = useState(false);
   const showConsent = consented === false && !consentDismissed;
-  // No policy text came back, so the card is showing CONSENT_TEXT_UNAVAILABLE.
+  // No policy terms came back, so the card is showing CONSENT_TEXT_UNAVAILABLE.
   // Both buttons go inert in that state (agreeing to terms nobody can read
   // is not consent) and a close button appears instead -- see the dialog.
-  const termsUnavailable = !consentText;
+  const termsUnavailable = !consentTerms;
+  // The dialog is named by its header and described by the boxed terms. A
+  // policy with an empty header is named by the terms themselves instead.
+  const consentLabelId = consentTerms && !consentTerms.header
+    ? 'chatroom-consent-terms'
+    : 'chatroom-consent-title';
 
   // Invite-code strip starts collapsed behind a link -- see the note at
   // the markup below.
@@ -189,7 +203,8 @@ export default function Chatroom() {
             tabIndex={-1}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="chatroom-consent-text"
+            aria-labelledby={consentLabelId}
+            aria-describedby={consentTerms?.header ? 'chatroom-consent-terms' : undefined}
           >
             {/* No terms to read means there is nothing to agree OR object
                 to, so both choices go dead and the only honest control is
@@ -204,9 +219,35 @@ export default function Chatroom() {
                 onClick={dismissConsent}
               />
             )}
-            <p className="chatroom-consent__text" id="chatroom-consent-text">
-              {consentText ?? CONSENT_TEXT_UNAVAILABLE}
-            </p>
+            {/* A short purpose statement on top, the detailed terms boxed
+                under it -- the box is the thing being agreed to. The terms
+                go through <Prose>, so "- " lines become a bullet list like
+                every other body field on the site. */}
+            {consentTerms ? (
+              <>
+                {consentTerms.header && (
+                  <h2 className="chatroom-consent__header" id="chatroom-consent-title">
+                    {consentTerms.header}
+                  </h2>
+                )}
+                <div className="chatroom-consent__terms" id="chatroom-consent-terms">
+                  <Prose text={consentTerms.condition} />
+                </div>
+              </>
+            ) : (
+              <p className="chatroom-consent__text" id="chatroom-consent-title">
+                {CONSENT_TEXT_UNAVAILABLE}
+              </p>
+            )}
+            {/* Why the last attempt failed. Only shown once there ARE terms
+                on screen: with none, the card's own body already says they
+                are unavailable, and repeating it under the dead buttons
+                would just be the same sentence twice. role="alert" so a
+                screen reader hears it -- a failed "I Agree" used to change
+                nothing at all, visually or otherwise. */}
+            {consentError && consentTerms && (
+              <p className="chatroom-consent__error" role="alert">{consentError}</p>
+            )}
             <div className="chatroom-consent__actions">
               <button
                 type="button"

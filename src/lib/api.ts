@@ -5,13 +5,19 @@
  * the session cookie is httpOnly, and a call that omits it is treated as a
  * brand-new session with no consent record and no invite verification.
  * Spelling that out at each call site made it easy to forget on a new one.
+ *
+ * `signal` is optional and every caller that can hang should pass one --
+ * `fetch` has no timeout of its own, so a stalled socket leaves the promise
+ * pending forever and whatever the caller does in `finally` never runs. See
+ * CHAT_REQUEST_TIMEOUT_MS in hooks/useChatDispatch.ts for what that cost.
  */
-export function postJson(url: string, body: unknown): Promise<Response> {
+export function postJson(url: string, body: unknown, signal?: AbortSignal): Promise<Response> {
   return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(body),
+    signal,
   });
 }
 

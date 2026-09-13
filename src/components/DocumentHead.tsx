@@ -26,8 +26,14 @@ const DESCRIPTION_MAX = 160;
  * Turn the bio `body` into a meta-description string: take the opening
  * paragraph (up to the first blank line -- a description is the lede, not
  * the whole bio), drop "- " / "* " bullet markers (the body may be point
- * form after the <Prose> change), collapse whitespace, and trim to a word
- * boundary under DESCRIPTION_MAX with an ellipsis.
+ * form after the <Prose> change) and collapse whitespace.
+ *
+ * If that is over DESCRIPTION_MAX, keep as many WHOLE sentences as fit. The
+ * bio is a single paragraph on the page, so "the first paragraph" is
+ * usually the entire bio, and a plain word-boundary cut severed it
+ * mid-sentence -- right before the clause that carried the point. Only when
+ * not even the first sentence fits does it fall back to a word-boundary cut
+ * with an ellipsis.
  */
 function bodyToDescription(body: string): string {
   const firstPara = body.split(/\n{2,}/)[0] ?? '';
@@ -39,6 +45,17 @@ function bodyToDescription(body: string): string {
     .replace(/\s+/g, ' ')
     .trim();
   if (flat.length <= DESCRIPTION_MAX) return flat;
+
+  // A sentence ends at . ! or ? FOLLOWED BY WHITESPACE, so "6.5/7.0" and
+  // "Node.js" are not boundaries.
+  let lede = '';
+  for (const sentence of flat.split(/(?<=[.!?])\s+/)) {
+    const next = lede ? `${lede} ${sentence}` : sentence;
+    if (next.length > DESCRIPTION_MAX) break;
+    lede = next;
+  }
+  if (lede.length > 40) return lede;
+
   const cut = flat.slice(0, DESCRIPTION_MAX);
   const lastSpace = cut.lastIndexOf(' ');
   return `${cut.slice(0, lastSpace > 40 ? lastSpace : DESCRIPTION_MAX).trimEnd()}…`;

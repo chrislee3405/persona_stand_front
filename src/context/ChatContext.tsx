@@ -1,49 +1,6 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-
-/**
- * Why a message is not part of the conversation, when it isn't.
- *
- * `undefined` is the normal case and means "delivered". The other two are
- * both rendered red, with different notes, because they are different
- * facts about what happened:
- *  - 'blocked'  the server refused it before it was ever stored (privacy
- *               gate, length, rate limit, consent) -> "Not sent"
- *  - 'withheld' the server DID store it, then dropped it from the
- *               conversation -- the response gate withheld a reply, or
- *               generation failed -> "Not answered"
- *
- * This lives ON THE MESSAGE rather than in two id lists beside it. The
- * lists were component state in useChatDispatch while `messages` is
- * persisted below, so a refresh brought a rejected message back looking
- * like an ordinary sent one -- the visitor was left believing a message
- * the persona never received had been delivered. Status has to persist
- * with the thing it describes.
- */
-export type MessageStatus = 'blocked' | 'withheld';
-
-export interface Message {
-  id: string;
-  text: string;
-  // 'user'    -- the visitor's own message (right-side bubble)
-  // 'backend' -- an AI reply turn (left-side bubble with a tail)
-  // 'system'  -- status / error notices (centred yellow bubble, no tail)
-  sender: 'user' | 'backend' | 'system';
-  status?: MessageStatus;
-}
-
-interface ChatContextType {
-  messages: Message[];
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  code: string;
-  setCode: React.Dispatch<React.SetStateAction<string>>;
-  inputCode: string;
-  setInputCode: React.Dispatch<React.SetStateAction<string>>;
-  conversationId: string | null;
-  setConversationId: React.Dispatch<React.SetStateAction<string | null>>;
-}
-
-const ChatContext = createContext<ChatContextType | null>(null);
+import { ChatContext, type Message } from '../hooks/useChat';
 
 const WELCOME_MESSAGES: Message[] = [
   { id: 'welcome-1', text: 'System connected.', sender: 'system' },
@@ -115,6 +72,8 @@ function writeStored(key: string, value: string): void {
   }
 }
 
+/** Holds the chat state and persists it to sessionStorage. Read it with
+ *  useChat (hooks/useChat.ts), which also defines Message / MessageStatus. */
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Message[]>(readStoredMessages);
 
@@ -171,10 +130,4 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       {children}
     </ChatContext.Provider>
   );
-}
-
-export function useChat() {
-  const ctx = useContext(ChatContext);
-  if (!ctx) throw new Error('useChat must be used within ChatProvider');
-  return ctx;
 }

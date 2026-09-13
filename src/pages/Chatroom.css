@@ -395,6 +395,60 @@ span.chatroom__avatar {
   /* keeps the text clear of the exit button when one is shown */
   padding-right: 2rem;
 }
+/* Why the last consent attempt failed, between the terms box and the two
+   buttons. Only rendered when there ARE terms on screen -- with none, the
+   card body already says they are unavailable. Red on the card's own light
+   ground rather than a tinted band: it is one line, and a banner would
+   compete with the terms it sits under. */
+.chatroom-consent__error {
+  margin: 0.85rem 0 0;
+  color: #b02a1e;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+/* One-line purpose statement above the terms box. */
+.chatroom-consent__header {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+/* The detailed terms, boxed so they read as the thing being agreed to. A
+   long policy scrolls inside the box, so the two buttons under it never get
+   pushed off a phone screen. 55vh is what still fits header + box + buttons
+   on a 667px-tall phone; 32rem lets a desktop show a six-point policy whole. */
+.chatroom-consent__terms {
+  max-height: min(55vh, 32rem);
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 0.5rem;
+  background: #f8f9fa;
+}
+/* <Prose> tags its blocks `.lead` for body-copy size on the home page; in
+   here they are small print. List spacing is set locally rather than taken
+   from Home.css's .prose__list, so this card does not depend on the home
+   page's stylesheet. */
+.chatroom-consent__terms .lead {
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.chatroom-consent__terms p {
+  margin: 0 0 0.5rem;
+}
+.chatroom-consent__terms .prose__list {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+}
+.chatroom-consent__terms .prose__list li {
+  margin-bottom: 0.4rem;
+}
+.chatroom-consent__terms > :last-child,
+.chatroom-consent__terms .prose__list li:last-child {
+  margin-bottom: 0;
+}
 
 /* Circled "X", top-right. Only rendered when the terms failed to load --
    see the note in Chatroom.tsx. Drawn in CSS so there's no icon asset. */

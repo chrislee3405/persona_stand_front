@@ -35,12 +35,25 @@ jobs:
           IMAGE_TAG: ${{ github.sha }} # Git commit hash to ensure every single build gets a unique tag (e.g., a1b2c3d...).
           VITE_CDN_BASE: ${{ vars.VITE_CDN_BASE }} # Public CDN base (repo Variable). No trailing slash.
         run: |
+          set -euo pipefail
           # .env is gitignored, so it's not in the checkout. Recreate it from
           # the repo Variable so the image build reads it exactly like a local
           # build reads the dev's on-disk .env.
-          if [ -n "$VITE_CDN_BASE" ]; then
-            echo "VITE_CDN_BASE=$VITE_CDN_BASE" > .env
+          #
+          # REQUIRED, not optional. This used to be `if [ -n "$VITE_CDN_BASE" ]`,
+          # which silently skipped the write when the Variable was unset -- and
+          # the build then completed, because src/lib/assetUrl.ts carried a
+          # hardcoded fallback that kept every page image working. What shipped
+          # was an index.html whose favicon, og:image and hero preloads
+          # contained the literal string `%VITE_CDN_BASE%`. Nothing failed and
+          # nothing looked wrong until someone shared a link.
+          if [ -z "${VITE_CDN_BASE:-}" ]; then
+            echo "::error::VITE_CDN_BASE repository Variable is not set."
+            echo "Set it under Settings -> Secrets and variables -> Actions -> Variables."
+            echo "It is the single source for the CDN host: the JS bundle, index.html and nginx's CSP all come from it."
+            exit 1
           fi
+          echo "VITE_CDN_BASE=$VITE_CDN_BASE" > .env
           BRANCH_TAG=${{ github.ref_name }}
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG

@@ -4,7 +4,7 @@ import { useSiteContent, pickImage } from '../hooks/useSiteContent';
 import { useMediaPrefetch } from '../hooks/useMediaPrefetch';
 import { useDragScroll } from '../hooks/useDragScroll';
 import { useRevealOnScroll } from '../hooks/useRevealOnScroll';
-import { useActiveSection } from '../context/ActiveSectionContext';
+import { useActiveSection } from '../hooks/useActiveSection';
 import { assetUrl } from '../lib/assetUrl';
 import { safeHref } from '../lib/safeHref';
 import { rafThrottle } from '../lib/rafThrottle';
@@ -18,6 +18,7 @@ import BottomSheet from '../components/BottomSheet';
 import ProjectSheet, { type ProjectSheetData } from './ProjectSheet';
 import githubIcon from '../assets/icons/github.png';
 import linkedinIcon from '../assets/icons/linkin.png';
+import resumeIcon from '../assets/icons/resume.png';
 import {
   type HeroOverrides,
   type HeroConfig,
@@ -62,10 +63,12 @@ interface PersonalStatement {
   heading?: string;
   body?: string;
   cta?: { label: string; href: string };
-  /** Secondary action beside the chat CTA -- the CV. `href` is an S3 object
-   *  key (resolved through assetUrl), not a URL, so the file lives with
-   *  every other asset. Omit the key and no button renders. */
-  resume?: { label?: string; key?: string };
+  /** The CV button beside the chat icon. Only its label lives here
+   *  (default "Download CV"); the PDF is a site_image row like every other
+   *  asset -- section "personal_statement", description "resume", whose
+   *  image_path is the PDF's S3 key. No row, no button. A `key` left on an
+   *  older row is ignored. */
+  resume?: { label?: string };
   /** Skill pills under the role line, grouped. `colour` picks one of a
    *  fixed named set (see .skills__pill--* in Home.css); anything else
    *  falls back to slate, so a typo degrades instead of breaking. */
@@ -104,8 +107,13 @@ interface Certification {
  *  that row's `image_path`. Every image path comes from site_image. */
 interface Project {
   id: string;          // stable key; also the site_project.project_id
-  label: string;       // caption + <img alt> + sheet heading
+  label: string;       // caption + sheet heading (+ thumbnail alt if no image_description)
   image_tag?: string;  // site_image description for the thumbnail (defaults to `id`)
+  /** Alt text for the thumbnail: what the screenshot shows, not the
+   *  project's name -- the label printed right under it already says that,
+   *  so using the label as alt made a screen reader read the name twice.
+   *  Falls back to `label` when absent. */
+  image_description?: string;
   /** Short summary shown on the card's hover reveal, meant as POINT FORM
    *  ("- one\n- two"). It lives here, on the site_content row, not in the
    *  site_project detail: the card wants a scannable list, the pop-up
@@ -653,8 +661,10 @@ export default function Home() {
   // rename still renders while the new one is being inserted.
   const aboutTitle = statement.title ?? statement.heading;
   const skillGroups = (statement.skills ?? []).filter(g => g?.group && g.items?.length);
-  // The CV is an S3 key like every other asset, not a URL.
-  const resumeUrl = assetUrl(statement.resume?.key);
+  // The CV is a site_image row like every other asset -- its image_path is
+  // the PDF's S3 key (the table holds more than pictures). No row, no button.
+  const resumeUrl = assetUrl(pickImage(images, 'personal_statement', 'resume'));
+  const resumeLabel = statement.resume?.label ?? 'Download CV';
   // The `qualifications` section now holds degrees only; they render inside
   // About. Awards and certificates share the `certifications` section.
   const education = qualifications;
@@ -663,8 +673,9 @@ export default function Home() {
     <>
       {/* The owner's name is the page's only <h1> -- every section heading
           is an <h2>, so the document outline had no top level before this.
-          The chat entry point sits beside it as the persona's own icon; it
-          used to be a full-width button below the bio. */}
+          The chat entry point sits beside it as the persona's own icon, with
+          the CV button next to that; both used to be full-width buttons
+          below the bio. */}
       <div className="about__namerow">
         {/* ALWAYS rendered. This is the page's only <h1>, and it used to be
             conditional on `owner` -- so a personal_statement row without
@@ -674,7 +685,26 @@ export default function Home() {
             worse than being generic, the same call PERSONA_NAME_FALLBACK
             makes in the chatroom. */}
         <h1 className="about__name">{statement.owner || 'Portfolio'}</h1>
-        <ChatCta href={ctaHref} label={ctaLabel} />
+        {/* The two actions wrap as a pair, so a narrow screen never strands
+            the CV on a line of its own. Deliberately NOT positioned: ChatCta
+            places its hint bubble against .about__namerow, its nearest
+            positioned ancestor, and a positioned wrapper would take over as
+            that box and squeeze the bubble. */}
+        <span className="about__ctas">
+          <ChatCta href={ctaHref} label={ctaLabel} />
+          {resumeUrl && (
+            <a
+              className="resume-cta"
+              href={resumeUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={resumeLabel}
+              title={resumeLabel}
+            >
+              <img src={resumeIcon} alt="" aria-hidden="true" />
+            </a>
+          )}
+        </span>
       </div>
       {aboutTitle && <p className="about__title">{aboutTitle}</p>}
 
@@ -724,21 +754,6 @@ export default function Home() {
           />
         </div>
       )}
-
-      {/* The chat action moved up beside the name (see <ChatCta>), so this
-          row now carries the CV alone. Centred on phones, left from sm up. */}
-      <div className="about__actions mt-4">
-        {resumeUrl && (
-          <a
-            className="btn btn-outline-primary btn-lg px-4"
-            href={resumeUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {statement.resume?.label ?? 'Download CV'}
-          </a>
-        )}
-      </div>
     </>
   );
 
@@ -829,7 +844,7 @@ export default function Home() {
                 <>
                   <span className="proj-card__frame">
                     {thumb ? (
-                      <img className="proj-card__img" src={thumb} alt={p.label} loading="lazy" />
+                      <img className="proj-card__img" src={thumb} alt={p.image_description ?? p.label} loading="lazy" />
                     ) : (
                       <span className="proj-card__img proj-card__img--empty" aria-hidden="true" />
                     )}
