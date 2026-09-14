@@ -31,6 +31,17 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       babel({ presets: [reactCompilerPreset()] })
-    ]
+    ],
+    // `npm run dev` only (the built image is served by nginx, which does this
+    // itself -- see nginx.conf). Forwards /api to the backend that
+    // persona_stand_back's docker-compose publishes on :8000, so the browser
+    // still talks to ONE origin and the session cookie and fetch calls behave
+    // exactly as they do behind nginx. Without it every /api call 404'd
+    // against the dev server and the site looked like the backend was down.
+    server: {
+      proxy: {
+        '/api': 'http://localhost:8000',
+      },
+    },
   }
 })

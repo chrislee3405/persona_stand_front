@@ -8,16 +8,20 @@
    useChatDispatch's blockedIds) renders as a RED dialog box instead of
    the old red-text treatment.
 
-   Colour knobs are CSS custom properties on `.chatroom` so the
-   WhatsApp-ish greens can be re-tinted in one place (see the note on
-   --wa-bubble-out).
+   Colour knobs are CSS custom properties on `.chatroom` so the bubbles
+   can be re-tinted in one place (see the note on --wa-bubble-out).
    =================================================================== */
 
 .chatroom {
   --wa-panel-bg: #f0f2f5;      /* header + composer bars */
   --wa-chat-bg: #d8d2c8;       /* shows through if the wallpaper fails to load */
   --wa-bubble-in: #ffffff;
-  --wa-bubble-out: #c2e1ff;    /* outgoing (user) bubble -- bright light blue */
+  /* Outgoing (user) bubble: the brand orange tint from styles.css, so the
+     visitor's own messages carry the site's colour. The full-strength
+     --brand-accent would put dark text at under 5:1 and shout on every
+     message; this tint keeps it at ~7:1 and stays clearly distinct from
+     the pale-yellow system notices. */
+  --wa-bubble-out: var(--brand-accent-line, #f6c894);
   --wa-bubble-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
   --wa-text: #111b21;
   --wa-meta: rgba(17, 27, 33, 0.45);
@@ -218,7 +222,11 @@ span.chatroom__avatar {
   font-size: 0.905rem;
   line-height: 1.35;
   box-shadow: var(--wa-bubble-shadow);
-  white-space: pre-wrap;      /* keep the sender's own line breaks */
+  /* Keeps the sender's own line breaks. pre-line, not pre-wrap: pre-wrap
+     also keeps the space at every soft wrap, which hangs past the text and
+     made useShrinkWrapBubbles fit each wrapped bubble ~4px too wide. The
+     only cost is that runs of spaces collapse to one. */
+  white-space: pre-line;
   overflow-wrap: anywhere;    /* a long unbroken string can't overflow the panel */
 }
 .msg--out .msg__bubble {
@@ -639,4 +647,68 @@ span.chatroom__avatar {
   .send-btn.is-sending .dispatch-icon {
     animation: none !important;
   }
+}
+
+/* ---- under the card: conversation reference + withdraw consent -------
+   Deliberately the quietest thing on the page. It is small grey text
+   outside the chat chrome, so it reads as fine print rather than as part of
+   the conversation -- present for anyone who needs it, invisible to anyone
+   who doesn't. */
+.chatroom-meta {
+  max-width: 56rem;            /* lines up with .chatroom */
+  margin: 0.6rem auto 0;
+  padding-inline: 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  /* #6c757d on the page's light ground is ~4.6:1 -- readable fine print,
+     not decorative grey. */
+  color: var(--bs-secondary-color, #6c757d);
+}
+.chatroom-meta__ref {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;     /* a UUID must not force horizontal scroll on a phone */
+}
+.chatroom-meta__ref-id {
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+  /* One click selects the whole id. A copy button would need the Clipboard
+     API, which browsers withhold outside secure (https) contexts. */
+  user-select: all;
+}
+.chatroom-meta__withdraw {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.chatroom-meta__withdraw:hover:not(:disabled) {
+  color: var(--bs-body-color, #212529);
+}
+.chatroom-meta__withdraw:focus-visible {
+  outline: 2px solid var(--brand-ink, #283030);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.chatroom-meta__withdraw:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.chatroom-meta__error {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: right;
+  color: #b02a1e;
 }

@@ -27,9 +27,11 @@ const FOCUSABLE =
  * markup alone cannot:
  *  1. moves focus into the panel on open (first focusable, else the panel);
  *  2. cycles Tab / Shift+Tab within it;
- *  3. restores focus to whatever opened it on close -- so dismissing a
- *     sheet returns you to the card you opened it from, not the top of the
- *     document.
+ *  3. restores focus to whatever had it before opening, on close -- whether
+ *     the panel is hidden or unmounted -- so dismissing a sheet returns you
+ *     to the card you opened it from, not the top of the document. Skipped
+ *     if that element has since left the document, or if focus was moved
+ *     somewhere else on purpose.
  *
  * Esc is NOT handled here. BottomSheet already owns Esc because it also
  * owns the scroll lock and the history entry that have to be unwound with
@@ -93,9 +95,15 @@ export function useFocusTrap(
     document.addEventListener('keydown', onKeyDown, true);
     return () => {
       document.removeEventListener('keydown', onKeyDown, true);
-      // Only take focus back if it is still inside the panel we are
-      // unmounting -- if something else has deliberately moved it, leave it.
-      if (previouslyFocused && panel.contains(document.activeElement)) {
+      // Take focus back only if nothing else has deliberately moved it: it is
+      // still inside the panel (BottomSheet, which stays mounted), or the
+      // panel was REMOVED and focus fell back to <body> with it (the consent
+      // dialog, which unmounts -- React runs this cleanup after the nodes are
+      // detached, so a panel.contains() check alone never matched there).
+      const current = document.activeElement;
+      const stillInPanel = panel.contains(current);
+      const droppedWithPanel = !panel.isConnected && (!current || current === document.body);
+      if (previouslyFocused?.isConnected && (stillInPanel || droppedWithPanel)) {
         previouslyFocused.focus?.();
       }
     };

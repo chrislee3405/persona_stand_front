@@ -27,5 +27,38 @@ const CDN_BASE = import.meta.env.VITE_CDN_BASE.replace(/\/$/, '');
  */
 export function assetUrl(key?: string | null): string | undefined {
   if (!key) return undefined;
+  // Keys come from the database, and the URL built here is interpolated into
+  // CSS as well as into <img src>: Home.tsx sets `--hero-img: url("<this>")`
+  // through a custom property, which React does NOT escape. A key containing
+  // a quote or a parenthesis could therefore close that url() and append
+  // declarations of its own -- `a.jpg") , url("https://elsewhere/x` injects a
+  // second image request. The CSP's img-src stops that request leaving, but it
+  // should never be built in the first place.
+  //
+  // So a key carrying any character that can break out of url("...") -- a
+  // quote, a parenthesis, a backslash, whitespace, or a control character --
+  // is refused, and the caller falls back to its placeholder exactly as it
+  // does for a missing key. The same characters are rejected at write time by
+  // the backend's content validator (validate_image); this is the read-side
+  // half, for rows written before that existed or round it.
+  if (typeof key !== 'string' || isUnsafeKey(key)) return undefined;
   return `${CDN_BASE}/${key.replace(/^\//, '')}`;
+}
+
+/**
+ * True for a key containing anything that can end or escape a CSS
+ * `url("...")` token -- a quote, a parenthesis, a backslash -- or any
+ * whitespace or control character, none of which belong in an S3 object key
+ * this site uses. Control characters are found by char code rather than by a
+ * regex character class, which the no-control-regex lint rule forbids.
+ */
+function isUnsafeKey(key: string): boolean {
+  // The class is: double quote, single quote, both parentheses, a backslash
+  // (written `\\`), and any whitespace (`\s`).
+  if (/["'()\\\s]/.test(key)) return true;
+  for (let i = 0; i < key.length; i++) {
+    const code = key.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
 }

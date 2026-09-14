@@ -4,10 +4,17 @@ import { useChat } from './useChat';
 import { postJson, errorDetail } from '../lib/api';
 
 /**
- * Invite-code verification flow. `code` / `inputCode` themselves live in
+ * Invite-code verification flow. `verified`, `code` and `inputCode` live in
  * ChatContext (they must survive a page refresh); this hook adds the
- * in-flight flag and the submit handler. `isVerified` is derived here and
- * also consumed by useChatDispatch to pick the invite vs guest endpoint.
+ * in-flight flag and the submit handler.
+ *
+ * `isVerified` comes from ChatContext's `verified`, NOT from whether this tab
+ * holds a `code`. The two used to be the same thing, which is why a second tab
+ * of a verified session -- no code in its sessionStorage -- was treated as a
+ * guest. `verified` is seeded from the server on every chatroom load
+ * (useChatroomInitialize), set here on a successful verification, and cleared
+ * by useChatDispatch on a 401. It is also what useChatDispatch uses to pick
+ * the invite vs guest endpoint.
  *
  * Failures surface through `error` for the caller to render in the
  * invite-code strip -- the same in-page pattern the rest of the chatroom
@@ -15,12 +22,12 @@ import { postJson, errorDetail } from '../lib/api';
  * be styled, and was the only flow in the app reporting a failure that way.
  */
 export function useInviteCode() {
-  const { code, setCode, inputCode, setInputCode, conversationId } = useChat();
+  const { verified, setVerified, code, setCode, inputCode, setInputCode, conversationId } = useChat();
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   // Null when there's nothing to report. Cleared on every new attempt.
   const [error, setError] = useState<string | null>(null);
 
-  const isVerified = Boolean(code);
+  const isVerified = verified;
 
   const verifyCode = async (e: BaseSyntheticEvent) => {
     e.preventDefault();
@@ -41,13 +48,13 @@ export function useInviteCode() {
       if (!response.ok) {
         setError(await errorDetail(response, "That code wasn't recognised. Check it and try again."));
       } else {
-        const data = await response.json();
-        // `code` is now display-only ("Access Granted via X") — it is never
-        // sent back to the server as proof of anything. The server already
-        // upgraded this session to verified via the Set-Cookie on this response.
-        const verifiedCode = data.verifiedCode ?? codeToSend;
-        setCode(verifiedCode);
-        setInputCode(verifiedCode);
+        // The server upgraded this session via the Set-Cookie on this
+        // response, and deliberately does not echo the code back. `code` is
+        // display-only ("Access granted via X") and is what this visitor just
+        // typed -- it is never sent back to the server as proof of anything.
+        setVerified(true);
+        setCode(codeToSend);
+        setInputCode(codeToSend);
       }
     } catch (err) {
       console.error("Server validation error:", err);

@@ -25,10 +25,16 @@ export function safeHref(href?: string | null): string | undefined {
   const trimmed = href.trim();
   if (!trimmed) return undefined;
 
-  // Site-relative. Guard against the protocol-relative form `//evil.com`,
-  // which is same-scheme off-site navigation wearing a relative-looking
-  // prefix.
-  if (trimmed.startsWith('//')) return undefined;
+  // Site-relative. Guard against the forms that LOOK relative and are not:
+  //  - `//evil.com`, protocol-relative: same-scheme off-site navigation.
+  //  - `/\evil.com`: the WHATWG URL parser treats a backslash as a forward
+  //    slash in http(s) URLs, so a browser resolves this to https://evil.com/
+  //    exactly as it would `//evil.com`. The previous `//`-only check let it
+  //    straight through as a local path.
+  //  - any leading backslash, which has no legitimate site-relative meaning.
+  if (trimmed.startsWith('//') || trimmed.startsWith('/\\') || trimmed.startsWith('\\')) {
+    return undefined;
+  }
   if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('?')) {
     return trimmed;
   }

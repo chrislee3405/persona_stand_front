@@ -1,126 +1,98 @@
-import { useState, useEffect } from 'react';
-import { getJson, postJson, errorDetail } from '../lib/api';
+import { useState } from 'react';
+import { postJson, errorDetail } from '../lib/api';
+import type { ChatroomInit, ConsentTerms } from './useChatroomInitialize';
 
-/** The policy terms the popup renders: a one-line purpose statement above the
- *  box, and the detailed wording inside it. `header` may be empty, and the
- *  dialog then names itself by the terms instead. `condition` is the thing
- *  actually being agreed to, and the only part echoed back on submission. */
-export interface ConsentTerms {
-  header: string;
-  condition: string;
-}
+export type { ConsentTerms } from './useChatroomInitialize';
 
 /** What the visitor is told when the terms cannot be produced -- whether that
  *  is because none are configured or because the backend could not be
  *  reached. The backend sends the same sentence as its 503 `detail`; this is
- *  the fallback for the cases where no usable body arrives at all (a network
- *  failure, or the SPA's own index.html coming back from the proxy while the
- *  backend is down). */
+ *  the fallback for the cases where no usable body arrives at all. */
 const TERMS_UNAVAILABLE = 'Consent terms are currently unavailable. Please try again later.';
 
-/**
- * Narrows the `conditionTerms` object off an untyped JSON response.
- *
- * Returns null for anything that is not a usable {header, condition} -- which
- * is also exactly what the backend sends when it has nothing to show, so the
- * "no terms" path and the "malformed terms" path land in the same place
- * rather than one of them throwing mid-render.
- */
-function readTerms(raw: unknown): ConsentTerms | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const { header, condition } = raw as { header?: unknown; condition?: unknown };
-  if (typeof condition !== 'string' || !condition.trim()) return null;
-  return {
-    header: typeof header === 'string' ? header : '',
-    condition,
-  };
+const WITHDRAW_FAILED = 'Your consent could not be withdrawn right now. Please try again in a moment.';
+
+/** The consent fields that follow from an initialisation result. `loading`
+ *  maps to "not known yet", so the card does not flash on screen for an
+ *  already-consented session before the answer arrives. */
+function fromInit(init: ChatroomInit) {
+  if (init.status === 'ready') {
+    return {
+      consented: init.consent.consented,
+      terms: init.consent.terms,
+      checkFailed: !init.reachable,
+      error: init.consent.terms ? null : TERMS_UNAVAILABLE,
+    };
+  }
+  if (init.status === 'failed') {
+    // Fail closed -- if the check itself is broken, still show the card rather
+    // than silently letting messages through unconsented. With no terms to
+    // show, it renders as the inert unavailable card.
+    return { consented: false, terms: null, checkFailed: true, error: init.error };
+  }
+  return { consented: null, terms: null, checkFailed: false, error: null };
 }
 
 /**
- * Compulsory-consent gate. Checks the backend on mount, exposes the current
- * policy terms for the popup, and records agreement. `revokeConsent` is for
- * callers that need to re-open the popup without touching the setter --
- * currently the chat dispatch's HTTP 403 path (see useChatDispatch).
+ * Compulsory-consent gate. Takes the chatroom's initialisation result (see
+ * useChatroomInitialize -- this hook no longer fetches anything on mount),
+ * exposes the current policy terms for the card, and records agreement and
+ * withdrawal.
+ *
+ * `revokeConsent` re-opens the card locally without telling the server --
+ * for the chat dispatch's HTTP 403 path, where the server has already said
+ * consent is missing. `withdrawConsent` is the visitor's own choice and DOES
+ * tell the server: from then on nothing they send is processed or stored
+ * until they agree again.
  *
  * FAILS CLOSED, ALWAYS. Every path that cannot establish usable terms leaves
- * `consented` false and `consentTerms` null, which is what Chatroom renders
- * as the inert "terms unavailable" card -- no agree, no decline, just a close
+ * `consented` false and `consentTerms` null, which Chatroom renders as the
+ * inert "terms unavailable" card -- no agree, no decline, just a close
  * button. There is no state in which this hook reports consent it did not
- * observe, and none in which it offers an "I Agree" for terms nobody could
- * read.
- *
- * The backend never invents terms either: the placeholder app/main.py used to
- * seed at import time is gone, so "no policy configured" is a state that
- * genuinely reaches here, and it is handled rather than papered over.
+ * observe, and none in which it offers "I Agree" for terms nobody could read.
  */
-export function useConsent() {
-  // null = still checking with the backend, so the popup doesn't flash on
-  // screen for a returning, already-consented session before the check
-  // resolves.
-  const [consented, setConsented] = useState<boolean | null>(null);
+export function useConsent(init: ChatroomInit) {
+  const initial = fromInit(init);
+  // null = still initialising, so the card doesn't flash on screen for a
+  // returning, already-consented session before the answer resolves.
+  const [consented, setConsented] = useState<boolean | null>(initial.consented);
   const [isSubmittingConsent, setIsSubmittingConsent] = useState(false);
+  const [isWithdrawingConsent, setIsWithdrawingConsent] = useState(false);
   // Pulled from the backend (consent_policy table) rather than hardcoded, so
-  // the wording can change without a frontend redeploy. Stays null when there
-  // are no usable terms, or when the backend could not be reached -- Chatroom
-  // keys its inert "unavailable" card off exactly that.
-  const [consentTerms, setConsentTerms] = useState<ConsentTerms | null>(null);
-  // true if the mount-time /api/consent check couldn't reach a working
-  // backend (network error, a 5xx, or a non-JSON response like the SPA
-  // index.html coming back from the proxy while the backend is down). Used by
+  // the wording can change without a frontend redeploy.
+  const [consentTerms, setConsentTerms] = useState<ConsentTerms | null>(initial.terms);
+  // true when initialisation could not reach a working backend. Used by
   // Chatroom to show "disconnected" before any message has been sent.
-  const [checkFailed, setCheckFailed] = useState(false);
-  // Why the last action failed, for the card to render. Null when there is
-  // nothing to report. Without this a failed "I Agree" was completely silent:
-  // the spinner stopped, the button re-enabled, the card stayed exactly as it
-  // was, and the visitor clicked it again.
-  const [error, setError] = useState<string | null>(null);
+  const [checkFailed, setCheckFailed] = useState(initial.checkFailed);
+  // Why the last agree attempt failed, for the card to render. Without this a
+  // failed "I Agree" was completely silent: the spinner stopped, the button
+  // re-enabled, and the visitor clicked it again.
+  const [error, setError] = useState<string | null>(initial.error);
+  // Why the last withdrawal failed, shown beside the withdraw action rather
+  // than inside the card -- the card is not on screen when withdrawal is
+  // offered.
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    getJson('/api/consent')
-      .then(async res => {
-        // res.ok is checked FIRST. Without it, a 5xx whose body happens to be
-        // valid JSON -- which is exactly what FastAPI's error responses and
-        // this endpoint's own 503 are -- parsed cleanly, yielded no terms,
-        // and produced the correct card for the wrong reason: `checkFailed`
-        // stayed false, so the header cheerfully said "online" while the
-        // backend was down.
-        if (!res.ok) {
-          throw new Error(await errorDetail(res, TERMS_UNAVAILABLE));
-        }
-        const data = await res.json();
-        if (cancelled) return;
-        setCheckFailed(false);
-        setConsented(Boolean(data?.consented));
-        // A 200 with null conditionTerms is the other unavailable state: the
-        // database answered and there is nothing usable configured. Same
-        // inert card, but no "disconnected" -- nothing is broken.
-        const terms = readTerms(data?.conditionTerms);
-        setConsentTerms(terms);
-        setError(terms ? null : TERMS_UNAVAILABLE);
-      })
-      .catch(err => {
-        if (cancelled) return;
-        console.error('Failed to check consent status:', err);
-        setCheckFailed(true);
-        // Fail closed -- if the check itself is broken, still show the popup
-        // rather than silently letting messages through unconsented. With no
-        // terms to show, it renders as the inert unavailable card.
-        setConsented(false);
-        setConsentTerms(null);
-        setError(err instanceof Error && err.message ? err.message : TERMS_UNAVAILABLE);
-      });
-
-    return () => { cancelled = true; };
-  }, []);
+  // Adopt the initialisation result when it arrives. Done DURING RENDER, the
+  // React pattern for state that follows a prop (react.dev "storing
+  // information from previous renders"), not in an effect -- an effect would
+  // paint one frame of the stale state first, and is what
+  // react-hooks/set-state-in-effect exists to catch. Same pattern as
+  // ProjectSheet and TechChips.
+  const [appliedInit, setAppliedInit] = useState<ChatroomInit>(init);
+  if (init !== appliedInit) {
+    setAppliedInit(init);
+    const next = fromInit(init);
+    setConsented(next.consented);
+    setConsentTerms(next.terms);
+    setCheckFailed(next.checkFailed);
+    setError(next.error);
+  }
 
   const agreeConsent = async () => {
     // The button is disabled while consentTerms is null, but guard here too --
     // the backend requires the exact current condition in the body (see
-    // ConsentService.record_consent), so there is nothing valid to send yet,
-    // and submitting an agreement to terms nobody could read would not be
-    // consent in any sense worth recording.
+    // ConsentService.record_consent), so there is nothing valid to send yet.
     if (!consentTerms) {
       setError(TERMS_UNAVAILABLE);
       return;
@@ -134,13 +106,13 @@ export function useConsent() {
       if (response.ok) {
         setConsented(true);
         setCheckFailed(false);
+        setWithdrawError(null);
         return;
       }
 
-      // Every non-2xx is surfaced now. It used to be `if (response.ok)` with
-      // no else at all, so a 400 (the policy changed between our GET and this
-      // POST) or a 503 (nothing configured, or the database gone) left the
-      // card untouched and the visitor pressing a button that did nothing.
+      // Every non-2xx is surfaced. A 400 means the policy changed between
+      // initialisation and this POST; a 503 means nothing usable is configured
+      // or the database is gone.
       setError(await errorDetail(response, TERMS_UNAVAILABLE));
       if (response.status === 503) {
         // The terms we are holding are no longer usable -- drop them so the
@@ -158,10 +130,51 @@ export function useConsent() {
     }
   };
 
-  // Re-open the consent popup -- used when the backend rejects a chat turn
-  // with HTTP 403 (the session's consent record vanished between our mount
-  // check and now).
+  /**
+   * Withdraws this session's consent on the server.
+   *
+   * Returns true once the server has confirmed, so the caller can bring the
+   * consent card back. Local state flips to "not consented" ONLY on that
+   * confirmation: showing the visitor that collection has stopped when the
+   * request actually failed would be the one misleading outcome here, so a
+   * failure leaves them consented and says why.
+   */
+  const withdrawConsent = async (): Promise<boolean> => {
+    setIsWithdrawingConsent(true);
+    setWithdrawError(null);
+    try {
+      const response = await postJson('/api/consent/withdraw', {});
+      if (!response.ok) {
+        setWithdrawError(await errorDetail(response, WITHDRAW_FAILED));
+        return false;
+      }
+      setConsented(false);
+      // A stale agree-error from earlier must not greet them on the card.
+      setError(consentTerms ? null : TERMS_UNAVAILABLE);
+      return true;
+    } catch (err) {
+      console.error('Failed to withdraw consent:', err);
+      setWithdrawError(WITHDRAW_FAILED);
+      return false;
+    } finally {
+      setIsWithdrawingConsent(false);
+    }
+  };
+
+  // Re-open the consent card -- used when the backend rejects a chat turn with
+  // HTTP 403 (the session's consent is no longer in force server-side).
   const revokeConsent = () => setConsented(false);
 
-  return { consented, consentTerms, isSubmittingConsent, agreeConsent, revokeConsent, checkFailed, error };
+  return {
+    consented,
+    consentTerms,
+    isSubmittingConsent,
+    agreeConsent,
+    revokeConsent,
+    withdrawConsent,
+    isWithdrawingConsent,
+    withdrawError,
+    checkFailed,
+    error,
+  };
 }

@@ -44,12 +44,15 @@
      Sampled from assets/icons/tab_logo.png -- the two colours actually
      in the mark, so the chrome, the tab icon and the browser theme all
      agree instead of each picking their own dark.
-       --brand-ink    charcoal: the navbar, and the `theme-color` meta in
-                      index.html (keep those two in step -- a mismatch
-                      shows as a seam above the bar on Android)
-       --brand-accent orange: reserved. Nothing uses it yet; it is here so
-                      there is one place to start from when the palette
-                      moves off Bootstrap's default blue. */
+       --brand-ink    charcoal: brand text, dark fills and focus rings
+                      that sit on light or orange grounds.
+       --brand-bar    (below) the navbar background, and the `theme-color`
+                      meta in index.html -- keep those two in step, a
+                      mismatch shows as a seam above the bar on Android.
+       --brand-accent orange: the site's accent -- the chat launcher and
+                      buttons, timeline rims, focus rings on dark grounds;
+                      its -ink and tint variants below cover text and
+                      fills under text. */
   --brand-ink: #283030;
   /* The site bar. Light, so the charcoal in the logo has something to
      read against -- see the .site-bar note below. */

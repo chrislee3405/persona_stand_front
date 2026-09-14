@@ -24,6 +24,14 @@ interface NavbarContent {
 // impossible to get out of sync. "Projects" is just an anchor: individual
 // projects open as a bottom sheet from their thumbnails, not as pages.
 
+/** A click the page should handle itself. Cmd/Ctrl/Shift/Alt-clicks and
+ *  non-primary buttons are the browser's -- open in a new tab or window,
+ *  download -- so the handlers below must leave those alone rather than
+ *  preventDefault them into an in-page navigation. */
+function isPlainLeftClick(e: React.MouseEvent): boolean {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
+
 function Navbar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -39,6 +47,7 @@ function Navbar() {
 
   // Clicking the brand goes home and clears the scroll-spy highlight.
   const goHome = (e: React.MouseEvent) => {
+    if (!isPlainLeftClick(e)) return;
     e.preventDefault();
     setActiveSection(null);
     navigate('/');
@@ -54,6 +63,7 @@ function Navbar() {
   const closeMenu = () => setMenuOpen(false);
 
   const goToSection = (id: string) => (e: React.MouseEvent) => {
+    if (!isPlainLeftClick(e)) return;
     e.preventDefault();
     setActiveSection(id);            // instant highlight; the observer confirms once the scroll lands
     navigate(`/#${id}`);            // updates the URL + drives Home's scroll effect when coming from another route
@@ -116,7 +126,11 @@ function Navbar() {
                   key={s.id}
                   href={`/#${s.id}`}
                   active={homeSection === s.id}
-                  onClick={e => { goToSection(s.id)(e); closeMenu(); }}
+                  onClick={e => {
+                    if (!isPlainLeftClick(e)) return;
+                    goToSection(s.id)(e);
+                    closeMenu();
+                  }}
                 >
                   {s.label}
                 </NavDropdown.Item>

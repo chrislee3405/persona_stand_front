@@ -48,16 +48,25 @@ export function useRevealOnScroll(
   useLayoutEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return;
 
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
 
     const els = ids
       .map(id => document.getElementById(id))
       .filter((el): el is HTMLElement => el !== null);
 
+    // Every section at its natural opacity, and counted as seen so a later
+    // re-run never hides one again.
+    const revealAll = () => {
+      els.forEach(el => {
+        done.current.add(el.id);
+        el.classList.remove('reveal', 'reveal--in');
+      });
+    };
+
     // Under reduced motion there's nothing to stagger in -- leave every
     // section at its natural opacity and skip the observer entirely.
-    if (reduced) {
-      els.forEach(el => el.classList.remove('reveal', 'reveal--in'));
+    if (motionQuery?.matches) {
+      revealAll();
       return;
     }
 
@@ -93,6 +102,19 @@ export function useRevealOnScroll(
       io.observe(el);
     }
 
-    return () => io.disconnect();
+    // The setting can change mid-visit. Turned ON, stop hiding the sections
+    // not reached yet instead of fading them in later. Turned OFF, nothing to
+    // do: revealing is one-way, so nothing already shown is hidden again.
+    const onMotionChange = (e: MediaQueryListEvent) => {
+      if (!e.matches) return;
+      io.disconnect();
+      revealAll();
+    };
+    motionQuery?.addEventListener?.('change', onMotionChange);
+
+    return () => {
+      io.disconnect();
+      motionQuery?.removeEventListener?.('change', onMotionChange);
+    };
   }, [ids, refresh]);
 }

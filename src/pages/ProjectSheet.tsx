@@ -133,12 +133,11 @@ export default function ProjectSheet({
     const ratio = new Map<Element, number>();
     const sync = () => {
       let active: HTMLVideoElement | null = null;
-      let activeIndex = -1;
       let best = 0;
-      videoRefs.current.forEach((v, i) => {
+      videoRefs.current.forEach(v => {
         if (!v) return;
         const r = ratio.get(v) ?? 0;
-        if (r > best) { best = r; active = v; activeIndex = i; }
+        if (r > best) { best = r; active = v; }
       });
       videoRefs.current.forEach((v, i) => {
         if (!v) return;
@@ -154,7 +153,6 @@ export default function ProjectSheet({
           setPlayingIndex(cur => (cur === i ? null : cur));
         }
       });
-      void activeIndex;
     };
 
     const io = new IntersectionObserver(

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { BaseSyntheticEvent, KeyboardEvent } from 'react';
 import { useChat } from '../hooks/useChat';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useChatroomInitialize } from '../hooks/useChatroomInitialize';
 import { useConsent } from '../hooks/useConsent';
 import { useInviteCode } from '../hooks/useInviteCode';
 import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
+import { useShrinkWrapBubbles } from '../hooks/useShrinkWrapBubbles';
 import { useSiteContent } from '../hooks/useSiteContent';
 import Prose from '../components/Prose';
 import { assetUrl } from '../lib/assetUrl';
@@ -29,8 +31,8 @@ interface ChatroomContent {
  */
 const PERSONA_NAME_FALLBACK = 'AI Persona';
 
-// Shown when GET /api/consent carries no usable terms. Three causes, all of
-// which land here: consent_policy has no row, the newest row's terms are
+// Shown when GET /api/chatroom_initialize carries no usable terms. Three causes, all of
+// which land here: consent_policy has no row, the current (highest-id) row's terms are
 // malformed, or the backend could not be reached at all.
 //
 // NOT rare, and not a corner case. The backend no longer seeds a placeholder
@@ -43,8 +45,10 @@ const PERSONA_NAME_FALLBACK = 'AI Persona';
 const CONSENT_TEXT_UNAVAILABLE = "Consent terms are currently unavailable. Please try again later.";
 
 export default function Chatroom() {
-  // The running message list (persisted in ChatContext across refreshes).
-  const { messages } = useChat();
+  // The running message list (persisted in ChatContext across refreshes), and
+  // the backend-assigned conversation id -- shown under the card as the
+  // reference a visitor quotes when asking the site owner to delete it.
+  const { messages, conversationId } = useChat();
 
   // Header name, from site_content section "chatroom". Falls back to the
   // site owner's name, so a deployment that never adds a chatroom row
@@ -66,10 +70,20 @@ export default function Chatroom() {
   // useChatDispatch so it can pick the invite vs guest endpoint).
   const { code, inputCode, setInputCode, isVerified, isVerifyingCode, verifyCode, error: codeError } = useInviteCode();
 
+  // One request on load, GET /api/chatroom_initialize. It seeds this tab's
+  // invite-verification state straight into ChatContext -- so a new tab of a
+  // verified session is not treated as a guest -- and returns the consent half
+  // for useConsent below.
+  const init = useChatroomInitialize();
+
   // Consent gate: whether the user has agreed, the policy terms for the popup
-  // ({header, condition}), the submitting flag, agree/revoke actions, and
-  // whether the mount-time consent check couldn't reach the backend.
-  const { consented, consentTerms, isSubmittingConsent, agreeConsent, revokeConsent, checkFailed, error: consentError } = useConsent();
+  // ({header, condition}), the submitting flag, agree/revoke/withdraw actions,
+  // and whether initialisation couldn't reach the backend.
+  const {
+    consented, consentTerms, isSubmittingConsent, agreeConsent, revokeConsent,
+    withdrawConsent, isWithdrawingConsent, withdrawError,
+    checkFailed, error: consentError,
+  } = useConsent(init);
 
   // The terms popup is now dismissible: "I Don't Agree" sets this, which hides
   // the overlay and lets the visitor read the chatroom. It stays hidden until
@@ -110,6 +124,16 @@ export default function Chatroom() {
     revokeConsent();
   };
 
+  // "Disagree with consent", under the card. The server withdraws the
+  // session's consent first; only once it confirms does the card come back,
+  // undismissed, so the visitor has to explicitly agree again before anything
+  // else they send is processed. On failure nothing changes locally and the
+  // reason is shown beside the action -- claiming collection had stopped when
+  // it had not would be the one wrong outcome here.
+  const onWithdrawConsent = async () => {
+    if (await withdrawConsent()) setConsentDismissed(false);
+  };
+
   // Everything about turning typed text into backend turns: the input value +
   // change handler, the send handler (rapid-fire fragment batching lives in
   // here), the warning-banner text, and the ids of bubbles the backend
@@ -143,6 +167,10 @@ export default function Chatroom() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, warningMessage, isAwaitingReply]);
+
+  // A wrapped bubble otherwise stretches to its max-width, leaving an empty
+  // strip beside the text.
+  useShrinkWrapBubbles(scrollRef, messages);
 
   // Grow the composer to fit its wrapped text: reset to auto, then to the
   // content height. CSS `max-height` caps it at ~4 lines and turns on the
@@ -191,272 +219,309 @@ export default function Chatroom() {
   };
 
   return (
-    <div className="chatroom">
-      {/* Consent popup. Dismissible via "I Don't Agree" (the visitor can then
-          browse the chatroom), but any send attempt brings it back until
-          "I Agree" is clicked. */}
-      {showConsent && (
-        <div className="chatroom-consent">
-          <div
-            className="chatroom-consent__card"
-            ref={consentCardRef}
-            tabIndex={-1}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={consentLabelId}
-            aria-describedby={consentTerms?.header ? 'chatroom-consent-terms' : undefined}
-          >
-            {/* No terms to read means there is nothing to agree OR object
-                to, so both choices go dead and the only honest control is
-                "close" -- offered here, and only here. When the terms do
-                load this button is absent: leaving the gate is then a
-                decision ("I Don't Agree"), not a dismissal. */}
-            {termsUnavailable && (
-              <button
-                type="button"
-                className="chatroom-consent__exit"
-                aria-label="Close"
-                onClick={dismissConsent}
-              />
-            )}
-            {/* A short purpose statement on top, the detailed terms boxed
-                under it -- the box is the thing being agreed to. The terms
-                go through <Prose>, so "- " lines become a bullet list like
-                every other body field on the site. */}
-            {consentTerms ? (
-              <>
-                {consentTerms.header && (
-                  <h2 className="chatroom-consent__header" id="chatroom-consent-title">
-                    {consentTerms.header}
-                  </h2>
-                )}
-                <div className="chatroom-consent__terms" id="chatroom-consent-terms">
-                  <Prose text={consentTerms.condition} />
-                </div>
-              </>
-            ) : (
-              <p className="chatroom-consent__text" id="chatroom-consent-title">
-                {CONSENT_TEXT_UNAVAILABLE}
-              </p>
-            )}
-            {/* Why the last attempt failed. Only shown once there ARE terms
-                on screen: with none, the card's own body already says they
-                are unavailable, and repeating it under the dead buttons
-                would just be the same sentence twice. role="alert" so a
-                screen reader hears it -- a failed "I Agree" used to change
-                nothing at all, visually or otherwise. */}
-            {consentError && consentTerms && (
-              <p className="chatroom-consent__error" role="alert">{consentError}</p>
-            )}
-            <div className="chatroom-consent__actions">
-              <button
-                type="button"
-                className="chatroom-consent__agree"
-                onClick={agreeConsent}
-                disabled={isSubmittingConsent || termsUnavailable}
-              >
-                {isSubmittingConsent ? 'Submitting…' : 'I Agree'}
-              </button>
-              <button
-                type="button"
-                className="chatroom-consent__decline"
-                onClick={dismissConsent}
-                disabled={isSubmittingConsent || termsUnavailable}
-              >
-                I Don't Agree
-              </button>
+    <>
+      <div className="chatroom">
+        {/* Consent popup. Dismissible via "I Don't Agree" (the visitor can then
+            browse the chatroom), but any send attempt brings it back until
+            "I Agree" is clicked. */}
+        {showConsent && (
+          <div className="chatroom-consent">
+            <div
+              className="chatroom-consent__card"
+              ref={consentCardRef}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={consentLabelId}
+              aria-describedby={consentTerms?.header ? 'chatroom-consent-terms' : undefined}
+            >
+              {/* No terms to read means there is nothing to agree OR object
+                  to, so both choices go dead and the only honest control is
+                  "close" -- offered here, and only here. When the terms do
+                  load this button is absent: leaving the gate is then a
+                  decision ("I Don't Agree"), not a dismissal. */}
+              {termsUnavailable && (
+                <button
+                  type="button"
+                  className="chatroom-consent__exit"
+                  aria-label="Close"
+                  onClick={dismissConsent}
+                />
+              )}
+              {/* A short purpose statement on top, the detailed terms boxed
+                  under it -- the box is the thing being agreed to. The terms
+                  go through <Prose>, so "- " lines become a bullet list like
+                  every other body field on the site. */}
+              {consentTerms ? (
+                <>
+                  {consentTerms.header && (
+                    <h2 className="chatroom-consent__header" id="chatroom-consent-title">
+                      {consentTerms.header}
+                    </h2>
+                  )}
+                  <div className="chatroom-consent__terms" id="chatroom-consent-terms">
+                    <Prose text={consentTerms.condition} />
+                  </div>
+                </>
+              ) : (
+                <p className="chatroom-consent__text" id="chatroom-consent-title">
+                  {CONSENT_TEXT_UNAVAILABLE}
+                </p>
+              )}
+              {/* Why the last attempt failed. Only shown once there ARE terms
+                  on screen: with none, the card's own body already says they
+                  are unavailable, and repeating it under the dead buttons
+                  would just be the same sentence twice. role="alert" so a
+                  screen reader hears it -- a failed "I Agree" used to change
+                  nothing at all, visually or otherwise. */}
+              {consentError && consentTerms && (
+                <p className="chatroom-consent__error" role="alert">{consentError}</p>
+              )}
+              <div className="chatroom-consent__actions">
+                <button
+                  type="button"
+                  className="chatroom-consent__agree"
+                  onClick={agreeConsent}
+                  disabled={isSubmittingConsent || termsUnavailable}
+                >
+                  {isSubmittingConsent ? 'Submitting…' : 'I Agree'}
+                </button>
+                <button
+                  type="button"
+                  className="chatroom-consent__decline"
+                  onClick={dismissConsent}
+                  disabled={isSubmittingConsent || termsUnavailable}
+                >
+                  I Don't Agree
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      <header className="chatroom__header">
-        {AVATAR_URL && !avatarBroken ? (
-          <img
-            className="chatroom__avatar"
-            src={AVATAR_URL}
-            alt=""
-            aria-hidden="true"
-            onError={() => setAvatarBroken(true)}
-          />
-        ) : (
-          <span className="chatroom__avatar" aria-hidden="true">P</span>
         )}
-        <div>
-          <div className="chatroom__title">{personaName}</div>
-          <div
-            className={`chatroom__status${offline && !isAwaitingReply ? ' chatroom__status--offline' : ''}`}
-          >
-            {/* "disconnected", not "offline": this state means the backend
-                could not be reached, not that the persona is merely away.
-                The red is correct because it IS a failure -- the word was
-                the inaccurate part. */}
-            {isAwaitingReply ? 'Typing…' : offline ? 'disconnected' : 'online'}
+
+        <header className="chatroom__header">
+          {AVATAR_URL && !avatarBroken ? (
+            <img
+              className="chatroom__avatar"
+              src={AVATAR_URL}
+              alt=""
+              aria-hidden="true"
+              onError={() => setAvatarBroken(true)}
+            />
+          ) : (
+            <span className="chatroom__avatar" aria-hidden="true">P</span>
+          )}
+          <div>
+            <div className="chatroom__title">{personaName}</div>
+            <div
+              className={`chatroom__status${offline && !isAwaitingReply ? ' chatroom__status--offline' : ''}`}
+            >
+              {/* "disconnected", not "offline": this state means the backend
+                  could not be reached, not that the persona is merely away.
+                  The red is correct because it IS a failure -- the word was
+                  the inaccurate part. */}
+              {isAwaitingReply ? 'Typing…' : offline ? 'disconnected' : 'online'}
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Invite-code strip -- collapsed by default. It is a back-door for
-          the few people who hold a code, but as an always-open field it
-          was the first thing every visitor met, which made the page look
-          gated. It opens on request, and stays open by itself once there
-          is something to show: a verified code, or an error to read. */}
-      {!codeOpen && !isVerified && !codeError && (
-        <button
-          type="button"
-          className="chatroom__code-toggle"
-          onClick={() => setCodeOpen(true)}
-        >
-          Have an invite code?
-        </button>
-      )}
-      <form
-        className={`chatroom__code${isVerified ? ' chatroom__code--ok' : ''}`}
-        onSubmit={verifyCode}
-        hidden={!codeOpen && !isVerified && !codeError}
-      >
-        <input
-          type="text"
-          // A NAME, not a description. The placeholder cannot do this job:
-          // it is the only thing a screen reader had to go on, and it is
-          // also dynamic -- it becomes "Verifying code…" and then "Access
-          // granted via ABC123", so the control's name changed under the
-          // user mid-flow.
-          aria-label="Invite code"
-          placeholder={
-            isVerified
-              ? `Access granted via ${code}`
-              : isVerifyingCode
-                ? 'Verifying code…'
-                : 'Invite code (optional)'
-          }
-          value={inputCode}
-          onChange={(e) => setInputCode(e.target.value)}
-          disabled={isVerifyingCode || isVerified}
-        />
-        <button type="submit" disabled={isVerifyingCode || isVerified}>
-          {isVerifyingCode ? 'Checking…' : isVerified ? 'Verified' : 'Verify'}
-        </button>
-        {codeError && (
-          <p className="chatroom__code-error" role="alert">{codeError}</p>
+        {/* Invite-code strip -- collapsed by default. It is a back-door for
+            the few people who hold a code, but as an always-open field it
+            was the first thing every visitor met, which made the page look
+            gated. It opens on request, and stays open by itself once there
+            is something to show: a verified code, or an error to read. */}
+        {!codeOpen && !isVerified && !codeError && (
+          <button
+            type="button"
+            className="chatroom__code-toggle"
+            onClick={() => setCodeOpen(true)}
+          >
+            Have an invite code?
+          </button>
         )}
-      </form>
-
-      {/* Message area over the steady wallpaper */}
-      <div className="chatroom__body" style={{ backgroundImage: `url(${wallpaper})` }}>
-        {/* role="log" + aria-live: without them a screen reader user was
-            told the persona was typing (the indicator below has
-            role="status") and then never told what it said. `additions`
-            only -- re-announcing the whole thread on each new bubble
-            would be unusable. */}
-        <div
-          className="chatroom__scroll"
-          ref={scrollRef}
-          role="log"
-          aria-live="polite"
-          aria-relevant="additions"
-          aria-label="Conversation"
+        <form
+          className={`chatroom__code${isVerified ? ' chatroom__code--ok' : ''}`}
+          onSubmit={verifyCode}
+          hidden={!codeOpen && !isVerified && !codeError}
         >
-          {messages.map((msg) => {
-            // System / error notice -- centred yellow bubble, no tail.
-            if (msg.sender === 'system') {
+          <input
+            type="text"
+            // A NAME, not a description. The placeholder cannot do this job:
+            // it is the only thing a screen reader had to go on, and it is
+            // also dynamic -- it becomes "Verifying code…" and then "Access
+            // granted via ABC123", so the control's name changed under the
+            // user mid-flow.
+            aria-label="Invite code"
+            placeholder={
+              isVerified
+                // `code` exists only in the tab that did the verifying; the
+                // server never sends it back, so any other tab of the same
+                // verified session says just "Access granted".
+                ? (code ? `Access granted via ${code}` : 'Access granted')
+                : isVerifyingCode
+                  ? 'Verifying code…'
+                  : 'Invite code (optional)'
+            }
+            value={inputCode}
+            onChange={(e) => setInputCode(e.target.value)}
+            disabled={isVerifyingCode || isVerified}
+          />
+          <button type="submit" disabled={isVerifyingCode || isVerified}>
+            {isVerifyingCode ? 'Checking…' : isVerified ? 'Verified' : 'Verify'}
+          </button>
+          {codeError && (
+            <p className="chatroom__code-error" role="alert">{codeError}</p>
+          )}
+        </form>
+
+        {/* Message area over the steady wallpaper */}
+        <div className="chatroom__body" style={{ backgroundImage: `url(${wallpaper})` }}>
+          {/* role="log" + aria-live: without them a screen reader user was
+              told the persona was typing (the indicator below has
+              role="status") and then never told what it said. `additions`
+              only -- re-announcing the whole thread on each new bubble
+              would be unusable. */}
+          <div
+            className="chatroom__scroll"
+            ref={scrollRef}
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-label="Conversation"
+          >
+            {messages.map((msg) => {
+              // System / error notice -- centred yellow bubble, no tail.
+              if (msg.sender === 'system') {
+                return (
+                  <div key={msg.id} className="msg msg--sys">
+                    <div className="msg__bubble msg__bubble--sys">
+                      <span className="visually-hidden">System: </span>
+                      <span className="msg__text">{msg.text}</span>
+                    </div>
+                  </div>
+                );
+              }
+              // User message (right) or AI reply (left, with tail).
+              const isUser = msg.sender === 'user';
+              // Two ways a user bubble stops being part of the conversation, with
+              // the same red styling but different notes -- "Not sent" would be a
+              // false statement for a withheld turn, which the server did receive
+              // and store before dropping it from the history. The status now
+              // lives on the message itself, so it survives a refresh with the
+              // text it describes (see Message.status in ChatContext).
+              const note =
+                isUser && msg.status === 'blocked' ? '✕ Not sent'
+                : isUser && msg.status === 'withheld' ? '✕ Not answered'
+                : null;
               return (
-                <div key={msg.id} className="msg msg--sys">
-                  <div className="msg__bubble msg__bubble--sys">
-                    <span className="visually-hidden">System: </span>
-                    {msg.text}
+                <div
+                  key={msg.id}
+                  className={`msg ${isUser ? 'msg--out' : 'msg--in'}${note ? ' msg--blocked' : ''}`}
+                >
+                  <div className="msg__bubble">
+                    <span className="visually-hidden">{isUser ? 'You: ' : 'Persona: '}</span>
+                    <span className="msg__text">{msg.text}</span>
+                    {note && <span className="msg__blocked-note">{note}</span>}
                   </div>
                 </div>
               );
-            }
-            // User message (right) or AI reply (left, with tail).
-            const isUser = msg.sender === 'user';
-            // Two ways a user bubble stops being part of the conversation, with
-            // the same red styling but different notes -- "Not sent" would be a
-            // false statement for a withheld turn, which the server did receive
-            // and store before dropping it from the history. The status now
-            // lives on the message itself, so it survives a refresh with the
-            // text it describes (see Message.status in ChatContext).
-            const note =
-              isUser && msg.status === 'blocked' ? '✕ Not sent'
-              : isUser && msg.status === 'withheld' ? '✕ Not answered'
-              : null;
-            return (
-              <div
-                key={msg.id}
-                className={`msg ${isUser ? 'msg--out' : 'msg--in'}${note ? ' msg--blocked' : ''}`}
-              >
-                <div className="msg__bubble">
-                  <span className="visually-hidden">{isUser ? 'You: ' : 'Persona: '}</span>
-                  {msg.text}
-                  {note && <span className="msg__blocked-note">{note}</span>}
+            })}
+
+            {warningMessage && (
+              <div className="chatroom__notice" role="status">{warningMessage}</div>
+            )}
+
+            {/* "Persona is typing" -- shown while a reply is in flight
+                (useChatDispatch.isAwaitingReply). */}
+            {isAwaitingReply && (
+              <div className="msg msg--in msg--typing">
+                <div className="msg__bubble msg__bubble--typing" role="status" aria-label="Persona is typing">
+                  <span className="msg__dot" />
+                  <span className="msg__dot" />
+                  <span className="msg__dot" />
                 </div>
               </div>
-            );
-          })}
-
-          {warningMessage && (
-            <div className="chatroom__notice" role="status">{warningMessage}</div>
-          )}
-
-          {/* "Persona is typing" -- shown while a reply is in flight
-              (useChatDispatch.isAwaitingReply). */}
-          {isAwaitingReply && (
-            <div className="msg msg--in msg--typing">
-              <div className="msg__bubble msg__bubble--typing" role="status" aria-label="Persona is typing">
-                <span className="msg__dot" />
-                <span className="msg__dot" />
-                <span className="msg__dot" />
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
+
+        {/* Composer */}
+        <form className="chatroom__composer" onSubmit={onSubmit}>
+          <textarea
+            ref={composerRef}
+            rows={1}
+            placeholder="Type a message"
+            value={inputMessage}
+            onChange={handleInputChange}
+            onKeyDown={onComposerKeyDown}
+            maxLength={MAX_MESSAGE_LENGTH}
+            aria-label="Message"
+          />
+          <button
+            className={`send-btn${isSending ? ' is-sending' : ''}`}
+            type="submit"
+            aria-label="Send message"
+            onAnimationEnd={(e) => {
+              if (e.animationName === 'sendDispatchMove') setIsSending(false);
+            }}
+          >
+            <svg viewBox="0 0 200 200" aria-hidden="true">
+              <g className="dispatch-icon">
+                <g className="wing-top">
+                  <polygon
+                    points="145,100 55,54 55,100"
+                    fill="#fff"
+                    stroke="#fff"
+                    strokeWidth="7"
+                    strokeLinejoin="round"
+                  />
+                </g>
+                <g className="wing-bottom">
+                  <polygon
+                    points="145,100 55,146 55,100"
+                    fill="#fff"
+                    stroke="#fff"
+                    strokeWidth="7"
+                    strokeLinejoin="round"
+                  />
+                </g>
+              </g>
+            </svg>
+          </button>
+        </form>
       </div>
 
-      {/* Composer */}
-      <form className="chatroom__composer" onSubmit={onSubmit}>
-        <textarea
-          ref={composerRef}
-          rows={1}
-          placeholder="Type a message"
-          value={inputMessage}
-          onChange={handleInputChange}
-          onKeyDown={onComposerKeyDown}
-          maxLength={MAX_MESSAGE_LENGTH}
-          aria-label="Message"
-        />
-        <button
-          className={`send-btn${isSending ? ' is-sending' : ''}`}
-          type="submit"
-          aria-label="Send message"
-          onAnimationEnd={(e) => {
-            if (e.animationName === 'sendDispatchMove') setIsSending(false);
-          }}
-        >
-          <svg viewBox="0 0 200 200" aria-hidden="true">
-            <g className="dispatch-icon">
-              <g className="wing-top">
-                <polygon
-                  points="145,100 55,54 55,100"
-                  fill="#fff"
-                  stroke="#fff"
-                  strokeWidth="7"
-                  strokeLinejoin="round"
-                />
-              </g>
-              <g className="wing-bottom">
-                <polygon
-                  points="145,100 55,146 55,100"
-                  fill="#fff"
-                  stroke="#fff"
-                  strokeWidth="7"
-                  strokeLinejoin="round"
-                />
-              </g>
-            </g>
-          </svg>
-        </button>
-      </form>
-    </div>
+      {/* Under the card, deliberately quiet: small grey text, not part of
+          the chat chrome. Rendered only when there is something to show. */}
+      {(conversationId || consented === true || withdrawError) && (
+        <div className="chatroom-meta">
+          {/* The conversation's own id, which is random and says nothing about
+              who the visitor is. There is no self-service deletion; quoting
+              this to the site owner is how a visitor asks for the
+              conversation to be removed. `user-select: all` so one click
+              selects the whole value -- a copy button would need the
+              Clipboard API, which browsers withhold on plain http. */}
+          {conversationId && (
+            <p className="chatroom-meta__ref">
+              Conversation reference (quote it to request deletion):{' '}
+              <code className="chatroom-meta__ref-id">{conversationId}</code>
+            </p>
+          )}
+          {consented === true && (
+            <button
+              type="button"
+              className="chatroom-meta__withdraw"
+              onClick={onWithdrawConsent}
+              disabled={isWithdrawingConsent}
+            >
+              {isWithdrawingConsent ? 'Withdrawing…' : 'Disagree with consent'}
+            </button>
+          )}
+          {withdrawError && (
+            <p className="chatroom-meta__error" role="alert">{withdrawError}</p>
+          )}
+        </div>
+      )}
+    </>
   );
 }

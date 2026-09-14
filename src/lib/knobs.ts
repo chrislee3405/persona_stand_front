@@ -15,8 +15,8 @@ import type { CSSProperties } from 'react';
 
 /* ───────────────────────── 1. Hero / banner framing ─────────────────
  * Every tunable number for the full-bleed image bands (About hero, and
- * the Qualifications / Certifications banners) so Home.tsx can stay
- * about layout, not framing math.
+ * the Certification & Award banner) so Home.tsx can stay about layout,
+ * not framing math.
  *
  * The hero is a fixed, height-CLAMPED band sitting flush under the
  * sticky navbar (no layout shift -- the band's height is explicit and
@@ -48,12 +48,9 @@ export interface HeroOverrides {
   focusY?: number;     // %   - object-position Y (0 top .. 100 bottom)
   zoom?: number;       // >=1 - push into the focus point
   scrimFade?: number;  // %   - length of the photo -> page-bg blend
-  /** @deprecated Ignored -- the scrim's position is derived from where
-   *  the photo actually ends. See `scrimFade`. Rows that still carry
-   *  these keys parse fine; the values simply do nothing. */
-  scrimStart?: number;
-  /** @deprecated Ignored. See `scrimFade`. */
-  scrimEnd?: number;
+  // Older rows may still carry `scrimStart`/`scrimEnd`. Nothing reads them:
+  // the scrim's position is derived now (see `scrimFade`), and the backend
+  // validator still accepts them so those rows need no rewrite.
   textWidth?: number;  // %   - text column width on the right
   mobileFocusX?: number; // % - backdrop horizontal slice at <= 900px
   tinyFocusX?: number;   // % - backdrop horizontal slice at <= 480px
@@ -149,10 +146,14 @@ export const HERO_DEFAULTS = {
 
 export type HeroConfig = typeof HERO_DEFAULTS;
 
-/** Qualifications banner: a MIRROR of the hero -- image solid on the RIGHT,
- *  fading left; text on the left. The subject sits far right, so anchor the
- *  photo to the right edge and let the scrim cover more of its left/centre.
- *  (The mirror itself is `flip` on <HeroBand>; these are just the numbers.) */
+/** Mirrored banner framing -- image solid on the RIGHT, fading left; text on
+ *  the left. The subject sits far right, so anchor the photo to the right
+ *  edge and let the scrim cover more of its left/centre. (The mirror itself
+ *  is `flip` on <HeroBand>; these are just the numbers.)
+ *
+ *  Named for the Qualifications banner it was tuned on. That band is gone;
+ *  the Certification & Award band is mirrored the same way and starts from
+ *  these numbers (see certCfg in Home.tsx). */
 export const QUAL_HERO_DEFAULTS: HeroConfig = {
   ...HERO_DEFAULTS,
   focusX: 100,     // photo anchored to the right edge (subject is far right)
@@ -160,12 +161,6 @@ export const QUAL_HERO_DEFAULTS: HeroConfig = {
                    // photo's left/centre runs past it, which is fine here
                    // because the subject sits far right
 };
-
-/** Certifications banner: same orientation as the hero (image left, text
- *  right) for an alternating rhythm with the flipped Qualifications band --
- *  so it just uses HERO_DEFAULTS. Exported as its own name so a future
- *  tweak has an obvious home. */
-export const CERT_HERO_DEFAULTS: HeroConfig = { ...HERO_DEFAULTS };
 
 /** Resolved hero config -> inline CSS custom properties for the <section>. */
 export function heroVars(c: HeroConfig): CSSProperties {

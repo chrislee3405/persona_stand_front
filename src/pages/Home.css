@@ -138,16 +138,17 @@
   gap: 0.5rem;
 }
 /* The CV button. Same size and silhouette as the chat icon so the two read
-   as a pair, but ink rather than orange: chatting is the page's primary
-   action and the CV the secondary one, and two orange circles side by side
-   left nothing but a small white glyph to tell them apart. */
+   as a pair, and still orange -- on brand -- but the muted, darkened
+   accent (--brand-accent-ink) rather than the full-brightness
+   --brand-accent the chat button uses, so chatting still reads as the
+   page's primary action and the CV as the secondary one. */
 .resume-cta {
   display: grid;
   place-items: center;
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 50%;
-  background: var(--brand-ink, #283030);
+  background: var(--brand-accent-ink, #b35900);
   box-shadow: var(--shadow-raise, 0 2px 8px rgba(31, 38, 36, 0.08));
   transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -160,11 +161,11 @@
 .resume-cta:hover,
 .resume-cta:focus-visible {
   transform: translateY(-2px);
-  background: #3a4444;
+  background: #8f4700;
   box-shadow: var(--shadow-lift, 0 10px 22px rgba(31, 38, 36, 0.16));
 }
 .resume-cta:focus-visible {
-  outline: 3px solid var(--brand-accent, #f08000);
+  outline: 3px solid var(--brand-ink, #283030);
   outline-offset: 3px;
 }
 
@@ -291,19 +292,10 @@
   color: var(--brand-accent-ink, #b35900);
 }
 
-/* Education moved into About from its own band. A small heading, not an
-   <h2> at section scale -- it is a sub-part of About, and the page's
-   heading levels should say so. */
+/* Education moved into About from its own band, as the same credential
+   cards "Certification & Award" uses (see .cred below). */
 .about__education {
   margin: var(--sp-5, 1.5rem) 0 0;
-}
-.about__eduhead {
-  font-size: 0.72rem;
-  font-weight: 650;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--bs-secondary-color, #6c757d);
-  margin: 0 0 var(--sp-3, 0.75rem);
 }
 
 /* ===================================================================
@@ -346,7 +338,7 @@
 }
 
 /* ===================================================================
-   Credential list (Qualifications & Awards / Certifications)
+   Credential cards (Education in About / Certification & Award)
 
    One bordered row per credential instead of a bullet. Two things a
    bullet list could not do: the year is pulled to the right of the
@@ -415,90 +407,6 @@
   margin-top: 0.3rem;
   font-size: 0.88rem;
   color: var(--ink-body, #4a5259);
-}
-
-/* ---- List variant (About > Education) -----------------------------
-   Plain bullets. The same fields as the cards above, re-laid inline:
-   Education is supporting detail under a bio, not a section of records,
-   and four bordered cards there gave it the same visual weight as
-   "Certification & Award" -- which is what made that column read as a
-   stack of boxes. Back in normal flow (not the flex column above) so
-   the ::marker actually renders. */
-.cred--list {
-  display: block;
-  list-style: disc;
-  padding-left: 1.15rem;
-  margin: 0;
-  color: var(--ink-body, #4a5259);
-}
-.cred--list > li {
-  /* Each bullet is two or three lines now, so they need more air between
-     them than they did as single sentences, or the block reads as one
-     paragraph with stray bullets in it. */
-  margin-bottom: 0.6rem;
-  font-size: 0.92rem;
-  /* A LENGTH, not the usual multiplier: the qualification's name below is
-     set larger than the rest of the line, and a unitless line-height
-     would recompute against that bigger font and open up whichever
-     wrapped lines the name happens to land on. Fixing the line box keeps
-     a wrapped bullet evenly leaded. */
-  line-height: 1.4rem;
-}
-/* No card chrome, and no accent bar -- that rule targets .cred__item,
-   which this variant does not use, but the reset is here so the two
-   variants cannot drift into each other. */
-.cred--list > li::before {
-  content: none;
-}
-/* The qualification itself, a step up from the institution and year that
-   follow it -- it is the thing being scanned for, and at one flat size
-   the whole bullet read as undifferentiated detail. */
-.cred--list .cred__title {
-  display: block;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--brand-ink, #283030);
-  /* Takes the fixed line box set on the <li> instead of the unitless
-     1.35 the card variant gives .cred__title, which would recompute
-     against this larger size. It currently lands under the strut either
-     way, so nothing moves today -- this is so a future bump to the size
-     above cannot start opening up the lines the name wraps onto. */
-  line-height: inherit;
-}
-/* The institution and year, on the line below the qualification -- the
-   same split the cards use, so the two sections read as one system.
-   Baseline-aligned rather than centred, so the year sits on the
-   institution's FIRST line when a long name wraps, exactly as it does on
-   the cards. */
-.cred--list .cred__sub {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  font-size: 0.92rem;
-}
-.cred--list .cred__org {
-  display: inline;
-  margin: 0;
-  font-style: italic;
-  font-size: inherit;
-}
-/* Pushed to the right edge of the column so the dates read as a column
-   of their own -- the reason the cards pull the year out too. `auto`
-   margin rather than `justify-content: space-between` on the row above:
-   space-between puts a lone child at the START, so a row with a year and
-   no institution would have left it stranded on the left.
-   `tabular-nums` (from the base .cred__year) is what lines the digits up
-   with each other once they are in a column. */
-.cred--list .cred__year {
-  margin-left: auto;
-  font-size: inherit;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-.cred--list .cred__detail {
-  display: block;
-  margin-top: 0.1rem;
-  font-size: 0.85rem;
 }
 
 /* ===================================================================

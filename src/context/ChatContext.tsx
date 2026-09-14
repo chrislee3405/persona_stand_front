@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { ChatContext, type Message } from '../hooks/useChat';
 
 const WELCOME_MESSAGES: Message[] = [
-  { id: 'welcome-1', text: 'System connected.', sender: 'system' },
+  { id: 'welcome-1', text: 'This is an AI version of me, built from real background. Interview me the way you\'d text a candidate on a messaging app.', sender: 'system' },
   { id: 'welcome-2', text: 'Hello!', sender: 'backend' },
 ];
 
@@ -23,8 +23,8 @@ const WELCOME_MESSAGES: Message[] = [
  *    private window with the setting on, some embedded webviews). See the
  *    same reasoning, already applied, in lib/chatVisited.ts.
  *  - JSON.parse, on a value that was truncated by a failed write.
- *  - setItem, when the quota is exceeded -- `messages` grows without bound
- *    and is rewritten in full on every change.
+ *  - setItem, when the quota is exceeded. Less likely now that only the
+ *    most recent MAX_STORED_MESSAGES are written, but still possible.
  *
  * The fallback is always "behave as though nothing was stored", which is
  * the correct degradation: the visitor loses their scrollback, not the
@@ -72,17 +72,46 @@ function writeStored(key: string, value: string): void {
   }
 }
 
+function removeStored(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    /* unavailable -- nothing was stored to begin with */
+  }
+}
+
+/** How much scrollback survives a reload. The in-memory transcript is not
+ *  trimmed; only the stored copy is. `messages` is rewritten in full on every
+ *  change, so without a cap a long chat made every revealed fragment
+ *  re-serialise the whole history, and once it outgrew the quota the write
+ *  failed silently and the tab simply stopped remembering anything. */
+const MAX_STORED_MESSAGES = 200;
+
 /** Holds the chat state and persists it to sessionStorage. Read it with
  *  useChat (hooks/useChat.ts), which also defines Message / MessageStatus. */
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Message[]>(readStoredMessages);
 
-  // `code` is kept only so the UI can show "Access Granted via X" after a
-  // refresh. It is NOT used as an auth credential anymore — the actual
-  // authorization lives in an httpOnly session cookie the backend sets on
-  // verification, which this JS (and sessionStorage, and any XSS payload)
-  // cannot read or forge. Never resend `code` to the backend as proof of
-  // anything; the server already knows this session is verified.
+  // Whether this session has verified an invite code. It used to be DERIVED
+  // from `code` below -- i.e. from this tab's sessionStorage -- while the
+  // server's notion of verification lives in the session COOKIE, which every
+  // tab shares. So a second tab of a verified session had no code, reported
+  // "not verified", and sent every message as a guest: guest pacing, guest
+  // quota, half the regeneration budget. Now it is its own state, seeded by
+  // the server on each chatroom load (useChatroomInitialize) and cached here
+  // only so the first render before that answer is not a guess.
+  //
+  // The `chat_code` fallback carries over tabs that verified before this
+  // flag existed.
+  const [verified, setVerified] = useState(
+    () => readStoredString('chat_verified') === '1' || Boolean(readStoredString('chat_code')),
+  );
+
+  // `code` is kept only so the UI can show "Access granted via X" in the tab
+  // that did the verifying. It is NOT used as an auth credential -- the actual
+  // authorization lives in the httpOnly session cookie, which this JS (and
+  // sessionStorage, and any XSS payload) cannot read or forge -- and the
+  // server never sends it back, so any other tab simply shows "Access granted".
   const [code, setCode] = useState(() => readStoredString('chat_code') || '');
   const [inputCode, setInputCode] = useState(
     () => readStoredString('chat_inputCode') || readStoredString('chat_code') || '',
@@ -101,8 +130,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    writeStored('chat_messages', JSON.stringify(messages));
+    writeStored('chat_messages', JSON.stringify(messages.slice(-MAX_STORED_MESSAGES)));
   }, [messages]);
+
+  useEffect(() => {
+    writeStored('chat_verified', verified ? '1' : '0');
+  }, [verified]);
 
   useEffect(() => {
     writeStored('chat_code', code);
@@ -112,21 +145,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     writeStored('chat_inputCode', inputCode);
   }, [inputCode]);
 
+  // Cleared as well as set: a reset to null must not leave the old id in
+  // storage to be picked back up on the next reload.
   useEffect(() => {
     if (conversationId) {
       writeStored('chat_conversationId', conversationId);
+    } else {
+      removeStored('chat_conversationId');
     }
   }, [conversationId]);
 
+  // Memoised, as SiteContentProvider's value already is. This is the
+  // OUTERMOST provider in the tree and `messages` changes once per revealed
+  // reply fragment, so an object literal here hands every consumer a new
+  // value identity on every render whether or not anything it reads changed.
+  // react-compiler would likely memoise it anyway; stating it keeps the
+  // providers consistent rather than leaving the rule to a compiler detail.
+  // The setters are stable useState dispatchers and never change identity.
+  const value = useMemo(
+    () => ({
+      messages, setMessages,
+      verified, setVerified,
+      code, setCode,
+      inputCode, setInputCode,
+      conversationId, setConversationId,
+    }),
+    [messages, verified, code, inputCode, conversationId],
+  );
+
   return (
-    <ChatContext.Provider
-      value={{
-        messages, setMessages,
-        code, setCode,
-        inputCode, setInputCode,
-        conversationId, setConversationId
-      }}
-    >
+    <ChatContext.Provider value={value}>
       {children}
     </ChatContext.Provider>
   );

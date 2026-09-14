@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ActiveSectionContext } from '../hooks/useActiveSection';
 
@@ -11,8 +11,14 @@ import { ActiveSectionContext } from '../hooks/useActiveSection';
  */
 export function ActiveSectionProvider({ children }: { children: ReactNode }) {
   const [activeSection, setActiveSection] = useState<string | null>(null);
+  // Memoised for the same reason as ChatProvider's and SiteContentProvider's
+  // values: a fresh object each render is a new identity for every consumer.
+  // Here it matters more than it looks -- Home WRITES this context on scroll,
+  // so an unstable value would re-render the navbar and Home itself on
+  // renders where the active section did not actually change.
+  const value = useMemo(() => ({ activeSection, setActiveSection }), [activeSection]);
   return (
-    <ActiveSectionContext.Provider value={{ activeSection, setActiveSection }}>
+    <ActiveSectionContext.Provider value={value}>
       {children}
     </ActiveSectionContext.Provider>
   );

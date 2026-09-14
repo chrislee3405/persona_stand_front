@@ -127,7 +127,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
   const {
     setMessages,
     conversationId, setConversationId,
-    setCode, setInputCode
+    setVerified, setCode, setInputCode
   } = useChat();
 
   // Mirrors conversationId, but read synchronously via .current instead of
@@ -143,6 +143,17 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
   // React's render/commit timing, so even a handleSend call fired a
   // moment later reads the fresh value.
   const conversationIdRef = useRef(conversationId);
+
+  // Verification as of the latest commit, for code that runs LATER than the
+  // render it was created in. The hold timer is armed with this render's
+  // flushHeldMessage, and a turn awaits the previous send before choosing an
+  // endpoint -- so verifying an invite code during either wait still sent
+  // that turn to /api/guestchat on the closure's stale `isVerified`. The
+  // endpoint choice reads this instead.
+  const isVerifiedRef = useRef(isVerified);
+  useEffect(() => {
+    isVerifiedRef.current = isVerified;
+  }, [isVerified]);
 
   // Chains sends so a message fired before an EARLIER one's response has
   // even come back still waits to learn conversationId, instead of
@@ -303,14 +314,20 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
         postJson(endpoint, requestBody, AbortSignal.timeout(CHAT_REQUEST_TIMEOUT_MS));
 
       armWaitTyping();
-      let response = await postChat(isVerified ? '/api/invitechat' : '/api/guestchat');
+      const sentAsInvite = isVerifiedRef.current;
+      let response = await postChat(sentAsInvite ? '/api/invitechat' : '/api/guestchat');
 
-      if (response.status === 401 && isVerified) {
-        // This tab still has an invite code cached, but the server says
-        // this session's verification isn't valid (e.g. the session
-        // cookie expired or was cleared). Drop the stale code so the UI
-        // reverts to "not verified" and let the user re-verify later,
-        // and treat this message as guest so it isn't lost.
+      if (response.status === 401 && sentAsInvite) {
+        // This tab believes the session is verified, but the server says it
+        // isn't -- the session cookie expired or was cleared, or the invite
+        // code was deleted (which is how an invite is revoked). Drop the
+        // verification and the display code so the UI reverts to "not
+        // verified" and the visitor can re-verify, and send this message as
+        // a guest turn so it isn't lost.
+        // The ref too, at once: a turn already queued behind this one must
+        // not try the invite endpoint again before the re-render lands.
+        isVerifiedRef.current = false;
+        setVerified(false);
         setCode('');
         setInputCode('');
         response = await postChat('/api/guestchat');

@@ -35,6 +35,15 @@ export interface Message {
 interface ChatContextType {
   messages: Message[];
   setMessages: Dispatch<SetStateAction<Message[]>>;
+  /** Whether this browser session has verified an invite code, as last
+   *  reported by the server. Picks the invite vs guest endpoint. Seeded on
+   *  every chatroom load from GET /api/chatroom_initialize, so a new tab of a
+   *  verified session is not mistaken for a guest. */
+  verified: boolean;
+  setVerified: Dispatch<SetStateAction<boolean>>;
+  /** DISPLAY ONLY -- the code as typed in this tab, for "Access granted via X".
+   *  Empty in any tab that did not do the verifying: the server never sends
+   *  the code back. Never proof of anything. */
   code: string;
   setCode: Dispatch<SetStateAction<string>>;
   inputCode: string;

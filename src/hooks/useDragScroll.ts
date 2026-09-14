@@ -31,6 +31,16 @@ export function useDragScroll(
     let moved = false;
     let suppressClick = false;
 
+    // The move/up listeners go on `window` (so a drag that leaves the
+    // scroller keeps tracking) but only for the length of a drag. They used
+    // to stay attached for Home's whole lifetime, running on every mouse
+    // move anywhere on the page just to return early.
+    const detachDragListeners = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse' || e.button !== 0) return;
       dragging = true;
@@ -38,6 +48,9 @@ export function useDragScroll(
       suppressClick = false;
       startX = e.clientX;
       startScrollLeft = el.scrollLeft;
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
     };
 
     const onPointerMove = (e: PointerEvent) => {
@@ -53,6 +66,7 @@ export function useDragScroll(
     const onPointerUp = () => {
       if (!dragging) return;
       dragging = false;
+      detachDragListeners();
       el.classList.remove('is-dragging');
       if (moved) suppressClick = true;
     };
@@ -69,17 +83,12 @@ export function useDragScroll(
     const cancelNativeDrag = (e: Event) => e.preventDefault();
 
     el.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
     el.addEventListener('click', onClickCapture, true);
     el.addEventListener('dragstart', cancelNativeDrag);
 
     return () => {
       el.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerUp);
+      detachDragListeners(); // an unmount mid-drag
       el.removeEventListener('click', onClickCapture, true);
       el.removeEventListener('dragstart', cancelNativeDrag);
     };

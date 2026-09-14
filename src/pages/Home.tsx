@@ -37,17 +37,10 @@ interface SkillGroup {
    *  it is announced to assistive tech but not drawn, so the block stays
    *  a single compact row. */
   group: string;
-  /**
-   * @deprecated Ignored. The pills used to take one of five named
-   * colours per group, which put up to five hues in a row three lines
-   * from the top of the page; against the orange chat button, the
-   * heading and the hero it was the loudest thing in the section and the
-   * grouping it encoded was never reliable anyway (colours repeat once
-   * there are more groups than hues). They now alternate between the two
-   * brand colours. Kept on the type so existing site_content rows still
-   * parse -- there is no need to rewrite them.
-   */
-  colour?: string;
+  // Older rows may still carry a `colour` key. Nothing reads it: pills
+  // alternate between the two brand colours by group position (see the
+  // skills list below), and the backend validator still accepts the key so
+  // those rows need no rewrite.
   items: string[];
 }
 
@@ -69,12 +62,13 @@ interface PersonalStatement {
    *  image_path is the PDF's S3 key. No row, no button. A `key` left on an
    *  older row is ignored. */
   resume?: { label?: string };
-  /** Skill pills under the role line, grouped. `colour` picks one of a
-   *  fixed named set (see .skills__pill--* in Home.css); anything else
-   *  falls back to slate, so a typo degrades instead of breaking. */
+  /** Skill pills under the role line, grouped. */
   skills?: SkillGroup[];
   hero?: HeroOverrides;      // About-section hero-band framing (see above)
-  qualHero?: HeroOverrides;  // legacy: the Qualifications band no longer exists
+  // Base framing for the mirrored Certification & Award band, which certHero
+  // then overrides. Named for the Qualifications band it was first used on;
+  // still read (see certCfg), so it is not safe to drop from existing rows.
+  qualHero?: HeroOverrides;
   certHero?: HeroOverrides;  // Certification & Award banner framing
   // NOTE: no image key here. EVERY image on the site is fetched from the
   // site_image table (via `images` / pickImage()) -- the hero included. An
@@ -551,13 +545,10 @@ export default function Home() {
   // Code defaults, overridable per deployment from personal_statement.hero.
   const aboutCfg: HeroConfig = { ...HERO_DEFAULTS, ...statement.hero };
 
-  // Qualifications banner: mirror of the hero -- image solid on the RIGHT,
-  // fading left; text on the left. Reads the site_image ('qualifications',
-  // 'banner') slot; falls back to the plain section when unset. Framing
-  // numbers live in lib/knobs.ts (QUAL_HERO_DEFAULTS).
-  // The Certification & Award band is mirrored (image right), so it takes
-  // the framing numbers the old Qualifications banner used -- those were
-  // tuned for a right-anchored photo. Its image is the certifications one.
+  // The Certification & Award band is mirrored (image solid on the RIGHT,
+  // text on the left), so it starts from the right-anchored framing the old
+  // Qualifications banner was tuned with (QUAL_HERO_DEFAULTS in lib/knobs.ts,
+  // plus any personal_statement.qualHero row override).
   const qualCfg: HeroConfig = { ...QUAL_HERO_DEFAULTS, ...statement.qualHero };
 
   const qRaw = content.qualifications;
@@ -568,14 +559,10 @@ export default function Home() {
 
   const certifications = (Array.isArray(content.certifications) ? content.certifications : []) as Certification[];
 
-  // Certifications banner: same orientation as the hero (image left, text
-  // right) for an alternating rhythm with the flipped Qualifications band.
-  // Reads the site_image ('certifications', 'banner') slot. Framing numbers
-  // live in lib/knobs.ts (CERT_HERO_DEFAULTS).
+  // Certification & Award banner image: the site_image ('certifications',
+  // 'banner') slot. Framing is qualCfg above, then an explicit certHero row
+  // override on top.
   const certImg = assetUrl(pickImage(images, 'certifications', 'banner'));
-  // Mirrored band: start from the right-anchored numbers (qualCfg), then let
-  // an explicit certHero row override. CERT_HERO_DEFAULTS is the image-left
-  // framing this band no longer uses.
   const certCfg: HeroConfig = { ...qualCfg, ...statement.certHero };
 
   // Memoized: projectMediaUrls depends on this, and a fresh array each
@@ -656,6 +643,9 @@ export default function Home() {
 
   const contact = (content.contact ?? {}) as ContactInfo;
   const contactLinks = Array.isArray(contact.links) ? contact.links : [];
+  // Through safeHref like every other content-supplied href. The mailto:
+  // prefix already pins the scheme; this keeps the page to one link policy.
+  const emailHref = contact.email ? safeHref(`mailto:${contact.email}`) : undefined;
 
   // `title` replaced `heading`; fall back so a row written before the
   // rename still renders while the new one is being inserted.
@@ -725,9 +715,11 @@ export default function Home() {
                   groups they necessarily repeat, so a reader can see the
                   boundaries but not decode which group is which. That is
                   the label's job, and the label is always announced. */}
-              {g.items.map(item => (
+              {g.items.map((item, ii) => (
                 <span
-                  key={item}
+                  // Position included: a group listing the same skill twice
+                  // must not produce duplicate keys.
+                  key={`${item}-${ii}`}
                   className={`skills__pill skills__pill--${gi % 2 ? 'ink' : 'accent'}`}
                 >
                   {item}
@@ -742,12 +734,13 @@ export default function Home() {
 
       {/* Education moved up from its own section: a degree belongs beside
           who you are, not in a separate band. The remaining awards and
-          certificates live in "Certification & Award" below. */}
+          certificates live in "Certification & Award" below. No visible
+          heading -- degrees need no label -- so the list carries its name
+          for assistive tech instead. */}
       {education.length > 0 && (
         <div className="about__education">
-          <h2 className="about__eduhead">Education Qualification</h2>
           <CredentialList
-            variant="list"
+            label="Education"
             items={education.map(q => ({
               id: q.id, title: q.title, org: q.institution, year: q.year, detail: q.detail,
             }))}
@@ -991,7 +984,7 @@ export default function Home() {
               <>
                 <dt className="col-sm-3 col-lg-2">Email</dt>
                 <dd className="col-sm-9">
-                  <a href={`mailto:${contact.email}`}>{contact.email}</a>
+                  {emailHref ? <a href={emailHref}>{contact.email}</a> : contact.email}
                 </dd>
               </>
             )}
