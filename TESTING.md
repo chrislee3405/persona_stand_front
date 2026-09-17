@@ -72,21 +72,11 @@ Every push and pull request runs:
 Install dependencies → lint → behavior tests → TypeScript and build checks
 ```
 
-For pushes to `main` or `trial`, passing checks allow the next job to build and
-publish an ECR image using the real `VITE_CDN_BASE` repository variable. The
-image is tagged with its source commit and carries source/revision labels.
-Other branches and pull requests run checks without publishing an image.
+After passing checks, **every branch push**, including dev, builds and publishes a commit-specific GHCR image using the real `VITE_CDN_BASE`. Pull-request events do not publish. `scripts/publish_image.py` reuses existing commit images on reruns, verifies source/revision labels and emits `image.json` with the immutable digest and full source SHA.
 
-The publishing job needs the existing `AWS_ROLE_ARN`, `AWS_REGION`,
-`ECR_REPOSITORY`, and `VITE_CDN_BASE` repository variables and the corresponding
-AWS OIDC role permissions. The check job needs no AWS credentials. Configure
-repository rules to require the `checks` job before merging changes.
+Publication uses the automatic `GITHUB_TOKEN` with `packages: write`; no AWS settings are needed. Keep VITE_CDN_BASE. Grant ec2yml Actions read access in the GHCR package settings. Keep commit tags and tested images; changed image contents require a new source commit.
 
-Publishing stores a candidate build; it does not deploy the website. The
-`persona_stand_ec2yml` repository selects exact frontend and backend image
-digests, verifies their source revisions, and runs combined Playwright browser
-tests. Deploy the selected pair only after those combined tests pass. The two
-application repositories can be pushed in either order.
+The ec2yml repository selects frontend/backend GHCR digests and runs the same combined Playwright workflow for minor and major updates. Minor updates stay in GHCR. An explicitly approved major release copies the successful tested images to ECR without rebuilding, then EC2 deploys only promoted ECR digests. Application pushes can happen in either order. Setup and cleanup instructions are in ec2yml Part A.6.
 
 ## Scope and known limits
 

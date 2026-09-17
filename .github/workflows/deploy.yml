@@ -39,41 +39,33 @@ jobs:
 
   build-and-push:
     needs: checks
-    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'trial')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    # Serialize publication of the same commit, including workflow reruns.
+    concurrency:
+      group: ghcr-${{ github.sha }}
+      cancel-in-progress: false
     permissions:
       contents: read
-      id-token: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Configure AWS credentials using OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: docker/login-action@v3
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-      - name: Build and publish candidate image
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install registry tools
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Check publish-once safeguards
+        run: python3 -m unittest discover -s scripts -p test_publish_image.py
+      - name: Publish once or reuse the existing commit image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
-          BRANCH_TAG: ${{ github.ref_name }}
-          IMAGE_SOURCE: ${{ github.server_url }}/${{ github.repository }}
           VITE_CDN_BASE: ${{ vars.VITE_CDN_BASE }}
-        run: |
-          set -euo pipefail
-          if [ -z "${VITE_CDN_BASE:-}" ]; then
-            echo "::error::Set the VITE_CDN_BASE repository variable before publishing."
-            exit 1
-          fi
-          printf 'VITE_CDN_BASE=%s\n' "$VITE_CDN_BASE" > .env
-          docker build \
-            --label "org.opencontainers.image.revision=$IMAGE_TAG" \
-            --label "org.opencontainers.image.source=$IMAGE_SOURCE" \
-            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
-            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH_TAG" .
-          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH_TAG"
+        run: python3 scripts/publish_image.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ghcr-image-${{ github.sha }}
+          path: image.json
+          retention-days: 90

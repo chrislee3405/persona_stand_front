@@ -34,3 +34,7 @@ coverage/
 *.njsproj
 *.sln
 *.sw?
+
+# CI image receipt and Python publication checks
+image.json
+__pycache__/

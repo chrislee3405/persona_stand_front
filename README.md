@@ -8,6 +8,6 @@ See [TESTING.md](TESTING.md) for beginner instructions, test files, and the
 GitHub workflow. Run `npm ci` then `npm test` with Node.js 22+.
 
 Every push and pull request runs frontend checks with simulated API responses.
-Successful `main`/`trial` pushes publish versioned candidate images. Combined
+Every successful branch push publishes a commit-specific GHCR image. Combined
 browser testing and selection of the frontend/backend pair belong to
-`persona_stand_ec2yml`; publishing an image does not deploy it.
+`persona_stand_ec2yml`. Approved major releases copy tested images unchanged to ECR; EC2 deploys only promoted ECR digests. Minor updates remain in GHCR.
