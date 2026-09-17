@@ -25,3 +25,10 @@ lerna-debug.log*
 *.sln
 *.sw?
 .eslintcache
+
+# Tests run before image publication; the runtime serves only the app build.
+src/test/
+vitest.config.ts
+TESTING.md
+test-results/
+coverage/

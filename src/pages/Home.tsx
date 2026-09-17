@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { useSiteContent, pickImage } from '../hooks/useSiteContent';
+import { useSiteContent, pickMedia } from '../hooks/useSiteContent';
 import { useMediaPrefetch } from '../hooks/useMediaPrefetch';
 import { useDragScroll } from '../hooks/useDragScroll';
 import { useRevealOnScroll } from '../hooks/useRevealOnScroll';
@@ -57,9 +57,9 @@ interface PersonalStatement {
   body?: string;
   cta?: { label: string; href: string };
   /** The CV button beside the chat icon. Only its label lives here
-   *  (default "Download CV"); the PDF is a site_image row like every other
+   *  (default "Download CV"); the PDF is a site_media row like every other
    *  asset -- section "personal_statement", description "resume", whose
-   *  image_path is the PDF's S3 key. No row, no button. A `key` left on an
+   *  media_path is the PDF's S3 key. No row, no button. A `key` left on an
    *  older row is ignored. */
   resume?: { label?: string };
   /** Skill pills under the role line, grouped. */
@@ -71,9 +71,9 @@ interface PersonalStatement {
   qualHero?: HeroOverrides;
   certHero?: HeroOverrides;  // Certification & Award banner framing
   // NOTE: no image key here. EVERY image on the site is fetched from the
-  // site_image table (via `images` / pickImage()) -- the hero included. An
+  // site_media table (via `media` / pickMedia()) -- the hero included. An
   // old `heroImage` key on a personal_statement row is ignored; migrate it
-  // to a site_image ("personal_statement", "hero") row.
+  // to a site_media ("personal_statement", "hero") row.
 }
 
 interface Qualification {
@@ -96,13 +96,13 @@ interface Certification {
  *  banner. `content.projects` is an array of these (site_content section
  *  "projects"). Clicking a thumbnail opens the ProjectSheet pop-up for that
  *  `id` (there are no per-project pages). The picture is NOT a path in this
- *  row -- `image_tag` names a site_image row (section "projects",
+ *  row -- `image_tag` names a site_media row (section "projects",
  *  description == image_tag, defaulting to `id`) and the URL is built from
- *  that row's `image_path`. Every image path comes from site_image. */
+ *  that row's `media_path`. Every image path comes from site_media. */
 interface Project {
   id: string;          // stable key; also the site_project.project_id
   label: string;       // caption + sheet heading (+ thumbnail alt if no image_description)
-  image_tag?: string;  // site_image description for the thumbnail (defaults to `id`)
+  image_tag?: string;  // site_media description for the thumbnail (defaults to `id`)
   /** Alt text for the thumbnail: what the screenshot shows, not the
    *  project's name -- the label printed right under it already says that,
    *  so using the label as alt made a screen reader read the name twice.
@@ -119,7 +119,7 @@ interface Project {
 }
 
 /** Raw detail for one project (site_project table, keyed by project id).
- *  `videos[].src_tag` / `poster_tag` name site_image rows whose image_path
+ *  `videos[].src_tag` / `poster_tag` name site_media rows whose media_path
  *  is the .mp4 / .jpg S3 key; Home resolves them to URLs before handing the
  *  data to <ProjectSheet>. */
 interface ProjectDetail {
@@ -138,9 +138,9 @@ interface JourneyBlock {
   institution?: string;  // optional: the school / company / organisation --
                          // shown in italics under the title.
   body: string;
-  image_tag?: string;   // optional: names a site_image row -- section
+  image_tag?: string;   // optional: names a site_media row -- section
                         // "journey", description == this value. Its
-                        // image_path is shown opposite the card. A
+                        // media_path is shown opposite the card. A
                         // "<placeholder>"-style value counts as unset.
   /** Caption for that photo, printed centred beneath it and read out in
    *  its place by a screen reader -- what it shows, not what it is called
@@ -185,7 +185,7 @@ const HERO_ASPECT_FALLBACK = 1.4;
 const HERO_ASPECT_COVER = 100;
 
 /**
- * Authoring guidance for a band whose site_image row is missing, shown in
+ * Authoring guidance for a band whose site_media row is missing, shown in
  * the empty image area. Deliberately NOT rendered while the fetch is in
  * flight: "no hero row configured" is a claim about the database, and
  * making it about a site that may well have one is the mistake
@@ -408,7 +408,7 @@ function JourneySheet({
  * to separate pages, and the scroll-spy highlights the one in view.
  */
 export default function Home() {
-  const { content, images, journeyDetails, projectDetails, loading } = useSiteContent();
+  const { content, media, journeyDetails, projectDetails, loading } = useSiteContent();
   const { hash } = useLocation();
   const { setActiveSection } = useActiveSection();
 
@@ -529,7 +529,7 @@ export default function Home() {
   // section's whole purpose and must not be silently removable from the DB.
   const ctaHref = safeHref(statement.cta?.href) ?? '/chatroom';
   // Hero image -- like every image on the site -- comes only from the
-  // site_image table (section "personal_statement").
+  // site_media table (section "personal_statement").
   //
   // Two slots, because the band crops very differently once it stacks:
   // "hero_desk" is framed for the side-by-side layout, "hero_mob" for the
@@ -538,8 +538,8 @@ export default function Home() {
   // than broken. (There was a third fallback here to the original single
   // "hero" slot; that slot no longer exists in the database, so it was
   // unreachable and has been removed.)
-  const heroDesk = assetUrl(pickImage(images, 'personal_statement', 'hero_desk'));
-  const heroMob = assetUrl(pickImage(images, 'personal_statement', 'hero_mob'));
+  const heroDesk = assetUrl(pickMedia(media, 'personal_statement', 'hero_desk'));
+  const heroMob = assetUrl(pickMedia(media, 'personal_statement', 'hero_mob'));
   const heroSrc = heroDesk ?? heroMob;
   const heroSrcSm = heroMob ?? heroDesk;
   // Code defaults, overridable per deployment from personal_statement.hero.
@@ -559,10 +559,10 @@ export default function Home() {
 
   const certifications = (Array.isArray(content.certifications) ? content.certifications : []) as Certification[];
 
-  // Certification & Award banner image: the site_image ('certifications',
+  // Certification & Award banner image: the site_media ('certifications',
   // 'banner') slot. Framing is qualCfg above, then an explicit certHero row
   // override on top.
-  const certImg = assetUrl(pickImage(images, 'certifications', 'banner'));
+  const certImg = assetUrl(pickMedia(media, 'certifications', 'banner'));
   const certCfg: HeroConfig = { ...qualCfg, ...statement.certHero };
 
   // Memoized: projectMediaUrls depends on this, and a fresh array each
@@ -579,7 +579,7 @@ export default function Home() {
   const projectDetailMap = projectDetails as Record<string, ProjectDetail | undefined>;
 
   // The FIRST demo clip (+ its poster) of each project, resolved from
-  // site_image. Warmed into the browser cache in the background (after the
+  // site_media. Warmed into the browser cache in the background (after the
   // first interaction) so a project sheet opens with its lead video -- the
   // one that auto-plays -- already there. The rest stream on demand as the
   // viewer scrolls down to them. See useMediaPrefetch.
@@ -588,25 +588,25 @@ export default function Home() {
     for (const p of projectItems) {
       const first = projectDetailMap[p.id]?.videos?.[0];
       if (!first) continue;
-      const src = first.src_tag ? assetUrl(pickImage(images, 'projects', first.src_tag)) : undefined;
-      const poster = first.poster_tag ? assetUrl(pickImage(images, 'projects', first.poster_tag)) : undefined;
+      const src = first.src_tag ? assetUrl(pickMedia(media, 'projects', first.src_tag)) : undefined;
+      const poster = first.poster_tag ? assetUrl(pickMedia(media, 'projects', first.poster_tag)) : undefined;
       if (src) out.push(src);
       if (poster) out.push(poster);
     }
     return out;
-  }, [projectItems, projectDetailMap, images]);
+  }, [projectItems, projectDetailMap, media]);
   useMediaPrefetch(projectMediaUrls);
   const openProjectSheet = (project: Project, detail: ProjectDetail) => {
     // Resolve video / poster tags to CDN URLs here so <ProjectSheet> stays
     // presentational. Drop any clip whose .mp4 tag doesn't resolve. Only
-    // look a tag up when it's actually set -- pickImage() with no
+    // look a tag up when it's actually set -- pickMedia() with no
     // description falls back to the section's first image.
     const videos = (detail.videos ?? []).flatMap(v => {
-      const srcUrl = v.src_tag ? assetUrl(pickImage(images, 'projects', v.src_tag)) : undefined;
+      const srcUrl = v.src_tag ? assetUrl(pickMedia(media, 'projects', v.src_tag)) : undefined;
       if (!srcUrl) return [];
       return [{
         srcUrl,
-        posterUrl: v.poster_tag ? assetUrl(pickImage(images, 'projects', v.poster_tag)) : undefined,
+        posterUrl: v.poster_tag ? assetUrl(pickMedia(media, 'projects', v.poster_tag)) : undefined,
         caption: v.caption,
       }];
     });
@@ -617,6 +617,8 @@ export default function Home() {
       technologies: (detail.technologies ?? []).filter(Boolean),
       githubUrl: detail.githubUrl,
       demoUrl: detail.demoUrl,
+      // Optional PDF slot in site_media; the S3 key lives only in that table.
+      engineeringDetailsUrl: assetUrl(pickMedia(media, 'projects', `${project.id}-engineering-details`)),
       videos,
     });
     setProjectSheetOpen(true);
@@ -651,9 +653,9 @@ export default function Home() {
   // rename still renders while the new one is being inserted.
   const aboutTitle = statement.title ?? statement.heading;
   const skillGroups = (statement.skills ?? []).filter(g => g?.group && g.items?.length);
-  // The CV is a site_image row like every other asset -- its image_path is
+  // The CV is a site_media row like every other asset -- its media_path is
   // the PDF's S3 key (the table holds more than pictures). No row, no button.
-  const resumeUrl = assetUrl(pickImage(images, 'personal_statement', 'resume'));
+  const resumeUrl = assetUrl(pickMedia(media, 'personal_statement', 'resume'));
   const resumeLabel = statement.resume?.label ?? 'Download CV';
   // The `qualifications` section now holds degrees only; they render inside
   // About. Awards and certificates share the `certifications` section.
@@ -820,9 +822,9 @@ export default function Home() {
         {projectItems.length > 0 && (
           <ul className="proj-scroller" role="list" ref={projScrollerRef}>
             {projectItems.map(p => {
-              // Thumbnail URL is always resolved from the site_image table
+              // Thumbnail URL is always resolved from the site_media table
               // (section "projects", description == image_tag or id).
-              const thumb = assetUrl(pickImage(images, 'projects', p.image_tag ?? p.id));
+              const thumb = assetUrl(pickMedia(media, 'projects', p.image_tag ?? p.id));
               // Clickable only when there's a site_project row to show.
               const detail = projectDetailMap[p.id];
               const hasDetail = !!detail && typeof detail === 'object';
@@ -893,14 +895,14 @@ export default function Home() {
           <ol className="jtl" role="list">
             {journey.map((block, i) => {
               const isNow = i === journey.length - 1;
-              // Optional per-block image: `image_tag` names a site_image slot
-              // (section "journey", description == image_tag). Its image_path
+              // Optional per-block image: `image_tag` names a site_media slot
+              // (section "journey", description == image_tag). Its media_path
               // shows on the OPPOSITE side of the card. A "<placeholder>"-style
               // value, or no matching row, means no image.
               const tag = block.image_tag?.trim();
               const blockImg =
                 tag && !/^<.*>$/.test(tag)
-                  ? assetUrl(pickImage(images, 'journey', tag))
+                  ? assetUrl(pickMedia(media, 'journey', tag))
                   : undefined;
               // A block with a site_journey entry gets a clickable card that
               // opens the bottom sheet; otherwise the card is a plain <div>.

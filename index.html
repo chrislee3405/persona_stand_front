@@ -77,7 +77,7 @@
          /api/site-content resolves -- so its download would otherwise start
          late. Warm the CloudFront connection and start the one above-the-fold
          image in parallel with the bundle. Keep the URL in sync with the
-         site_image ('personal_statement', 'hero') key and assetUrl.ts's
+         site_media ('personal_statement', 'hero') key and assetUrl.ts's
          CDN_BASE; a stale URL just wastes one request, it doesn't break. -->
     <!-- %VITE_CDN_BASE% is substituted by Vite from the frontend .env at
          build time (same value assetUrl.ts uses). It must have NO trailing

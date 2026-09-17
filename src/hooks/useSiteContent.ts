@@ -1,8 +1,8 @@
 import { createContext, useContext } from 'react';
 
-/** One image slot for a section: a label plus the S3 object key.
- *  Internal to this module -- consumers use pickImage() / the `images` map. */
-export interface SiteImage {
+/** One media slot for a section: a label plus the S3 object key.
+ *  Internal to this module -- consumers use pickMedia() / the `media` map. */
+export interface SiteMedia {
   description: string;
   path: string;
 }
@@ -10,7 +10,7 @@ export interface SiteImage {
 /** Everything GET /api/site-content returns, plus the in-flight flag. */
 export interface SiteContentValue {
   content: Record<string, unknown>;
-  images: Record<string, SiteImage[]>;
+  media: Record<string, SiteMedia[]>;
   journeyDetails: Record<string, unknown>;
   projectDetails: Record<string, unknown>;
   loading: boolean;
@@ -37,7 +37,7 @@ export interface SiteContentValue {
  */
 export const SiteContentContext = createContext<SiteContentValue>({
   content: {},
-  images: {},
+  media: {},
   journeyDetails: {},
   projectDetails: {},
   loading: false,
@@ -54,13 +54,13 @@ export const SiteContentContext = createContext<SiteContentValue>({
  * One fetch, made once for the whole app, returns every section at once:
  *   {
  *     content: { "<section>": <json for that section>, ... },
- *     images:  { "<section>": [ { description, path }, ... ], ... },
+ *     media:  { "<section>": [ { description, path }, ... ], ... },
  *     journeyDetails: { "<journey block id>": <detail json>, ... },
  *     projectDetails: { "<project id>": <detail json>, ... }
  *   }
  * Text lives in the `site_content` table (shape differs per section -- an
- * object for prose sections, an array for the journey timeline); images
- * live in the separate `site_image` table, keyed by section and a slot
+ * object for prose sections, an array for the journey timeline); media
+ * live in the separate `site_media` table, keyed by section and a slot
  * `description` (e.g. "hero"); the expanded copy for the Journey and
  * Projects click-through pop-ups lives in `site_journey` / `site_project`,
  * keyed by a journey block's / project's `id`. All are {} until the fetch
@@ -75,17 +75,17 @@ export function useSiteContent(): SiteContentValue {
 }
 
 /**
- * Picks one image slot's S3 key out of the map returned by useSiteContent.
+ * Picks one media slot's S3 key out of the map returned by useSiteContent.
  * Returns the first slot matching `description` for the section, or the
- * section's first image if `description` is omitted, or undefined.
+ * section's first asset if `description` is omitted, or undefined.
  */
-export function pickImage(
-  images: Record<string, SiteImage[]>,
+export function pickMedia(
+  media: Record<string, SiteMedia[]>,
   section: string,
   description?: string,
 ): string | undefined {
-  const list = images[section];
+  const list = media[section];
   if (!list || list.length === 0) return undefined;
   if (!description) return list[0].path;
-  return list.find(img => img.description === description)?.path;
+  return list.find(asset => asset.description === description)?.path;
 }

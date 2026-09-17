@@ -14,7 +14,7 @@ import { markChatVisited } from '../lib/chatVisited';
 import wallpaper from '../assets/icons/chatroom_wallpaper.jpg';
 import './Chatroom.css';
 
-// Header avatar -- a fixed object in the CDN bucket (not a site_image row).
+// Header avatar -- a fixed object in the CDN bucket (not a site_media row).
 const AVATAR_URL = assetUrl('about_me/icon.png');
 
 /** site_content section "chatroom" -- header copy for this page. */

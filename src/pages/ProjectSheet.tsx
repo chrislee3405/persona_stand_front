@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Prose from '../components/Prose';
 import BottomSheet from '../components/BottomSheet';
+import TechStack from '../components/TechStack';
 import { safeHref } from '../lib/safeHref';
 
 /** One feature-demo clip, already resolved to CDN URLs by Home. */
@@ -21,6 +22,7 @@ export interface ProjectSheetData {
   technologies: string[];
   githubUrl?: string;
   demoUrl?: string;
+  engineeringDetailsUrl?: string;
   videos: ProjectVideo[];
 }
 
@@ -173,6 +175,7 @@ export default function ProjectSheet({
 
   const githubUrl = safeHref(data?.githubUrl);
   const demoUrl = safeHref(data?.demoUrl);
+  const engineeringDetailsUrl = safeHref(data?.engineeringDetailsUrl);
 
   return (
     <BottomSheet
@@ -202,28 +205,47 @@ export default function ProjectSheet({
           )}
         </div>
 
-        {data?.overview && (
+        {data && (data.overview || data.technologies.length > 0) && (
           <>
-            <h3 className="psheet__h">Overview</h3>
+            <div className="psheet__overview-row">
+              <h3 className="psheet__h">Overview</h3>
+              {open && data.technologies.length > 0 && (
+                <TechStack key={data.label} technologies={data.technologies} />
+              )}
+            </div>
             <Prose text={data.overview} />
           </>
         )}
 
         {data && data.features.length > 0 && (
           <>
-            <h3 className="psheet__h">Main features</h3>
+            <h3 className="psheet__h">Engineering highlights</h3>
             <ul className="psheet__list">
-              {data.features.map((f, i) => <li key={i}>{f}</li>)}
+              {data.features.map((f, i) => {
+                const separator = f.indexOf(': ');
+                return (
+                  <li key={i}>
+                    {separator > 0 ? (
+                      <>
+                        <strong className="psheet__highlight-title">{f.slice(0, separator)}</strong>
+                        {f.slice(separator + 2)}
+                      </>
+                    ) : f}
+                  </li>
+                );
+              })}
             </ul>
+            {engineeringDetailsUrl && (
+              <a className="btn btn-outline-primary btn-sm psheet__details-link"
+                href={engineeringDetailsUrl} target="_blank" rel="noopener noreferrer"
+                aria-label="Engineering decision details (PDF, opens in a new tab)">
+                Engineering decision details (PDF)
+                <span aria-hidden="true"> ↗</span>
+              </a>
+            )}
           </>
         )}
 
-        {data && data.technologies.length > 0 && (
-          // No heading -- the chips read as a tech list on their own.
-          <ul className="psheet__tech">
-            {data.technologies.map((t, i) => <li key={i}>{t}</li>)}
-          </ul>
-        )}
       </div>
 
       <div className="psheet__media">

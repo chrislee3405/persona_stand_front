@@ -12,6 +12,8 @@ node_modules
 dist
 dist-ssr
 *.local
+test-results/
+coverage/
 
 # Environment Files & Secrets
 # No .env in git. Locally it holds VITE_CDN_BASE for dev + local docker

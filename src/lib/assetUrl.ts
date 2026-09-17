@@ -39,7 +39,7 @@ export function assetUrl(key?: string | null): string | undefined {
   // quote, a parenthesis, a backslash, whitespace, or a control character --
   // is refused, and the caller falls back to its placeholder exactly as it
   // does for a missing key. The same characters are rejected at write time by
-  // the backend's content validator (validate_image); this is the read-side
+  // the backend's content validator (validate_media); this is the read-side
   // half, for rows written before that existed or round it.
   if (typeof key !== 'string' || isUnsafeKey(key)) return undefined;
   return `${CDN_BASE}/${key.replace(/^\//, '')}`;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { SiteContentContext, type SiteImage } from '../hooks/useSiteContent';
+import { SiteContentContext, type SiteMedia } from '../hooks/useSiteContent';
 
 /** How long to wait for /api/site-content before giving up and showing the
  *  failure state. A hung request is not the same as a slow one: without a
@@ -43,7 +43,7 @@ const RETRY_DELAY_MS = 1_200;
  */
 export function SiteContentProvider({ children }: { children: ReactNode }) {
   const [content, setContent] = useState<Record<string, unknown>>({});
-  const [images, setImages] = useState<Record<string, SiteImage[]>>({});
+  const [media, setMedia] = useState<Record<string, SiteMedia[]>>({});
   const [journeyDetails, setJourneyDetails] = useState<Record<string, unknown>>({});
   const [projectDetails, setProjectDetails] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
@@ -80,7 +80,9 @@ export function SiteContentProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         if (cancelled) return;
         setContent(data?.content && typeof data.content === 'object' ? data.content : {});
-        setImages(data?.images && typeof data.images === 'object' ? data.images : {});
+        // Accept the previous backend during a staggered deployment.
+        const media = data?.media ?? data?.images;
+        setMedia(media && typeof media === 'object' ? media : {});
         setJourneyDetails(
           data?.journeyDetails && typeof data.journeyDetails === 'object' ? data.journeyDetails : {},
         );
@@ -99,7 +101,7 @@ export function SiteContentProvider({ children }: { children: ReactNode }) {
           return;
         }
         console.error('Failed to load site content:', err);
-        setContent({}); setImages({}); setJourneyDetails({}); setProjectDetails({});
+        setContent({}); setMedia({}); setJourneyDetails({}); setProjectDetails({});
         setError(true);
         setLoading(false);
       }
@@ -114,8 +116,8 @@ export function SiteContentProvider({ children }: { children: ReactNode }) {
   // these -- a fresh identity each render would rebuild that work and the
   // observers keyed to it.
   const value = useMemo(
-    () => ({ content, images, journeyDetails, projectDetails, loading, error, retry }),
-    [content, images, journeyDetails, projectDetails, loading, error, retry],
+    () => ({ content, media, journeyDetails, projectDetails, loading, error, retry }),
+    [content, media, journeyDetails, projectDetails, loading, error, retry],
   );
 
   return (

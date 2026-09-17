@@ -537,7 +537,7 @@
   z-index: 0;
 
   /* --hero-img / --hero-img-sm are set inline by <HeroBand> from the two
-     site_image slots. The wide-layout file is the default; the narrow one
+     site_media slots. The wide-layout file is the default; the narrow one
      is swapped in at the same breakpoint the band itself stacks at, so
      the picture and the layout always change together. A band with only
      one image gets the same URL in both, and nothing extra is fetched --
@@ -556,7 +556,7 @@
 }
 
 /* No photo: either the content fetch is still in flight, or no
-   site_image row supplies one. The band keeps its full geometry either
+   site_media row supplies one. The band keeps its full geometry either
    way -- its height comes from the clamp above and its own text, never
    from the picture -- so this is a tint over the space the photo WILL
    occupy, not a placeholder that reserves it. A plain neutral wash: a
@@ -1860,11 +1860,22 @@
 .psheet__list li {
   margin-bottom: 0.35rem;
 }
+.psheet__highlight-title {
+  display: block;
+  margin-top: 0.8rem;
+  margin-bottom: 0.2rem;
+  color: var(--brand-accent-ink, #b35900);
+  font-weight: 700;
+}
+.psheet__details-link {
+  margin-top: 0.85rem;
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
 .psheet__tech {
   list-style: none;
-  /* top gap stands in for the removed "Technologies used" heading, so the
-     chips don't butt against the features list above */
-  margin: 1.4rem 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
@@ -1876,6 +1887,77 @@
   padding: 0.15rem 0.6rem;
   border-radius: 1rem;
   background: var(--bs-tertiary-bg, #f0f0f0);
+}
+.psheet__overview-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 1rem 0 0.5rem;
+}
+.psheet__overview-row .psheet__h { margin: 0; }
+.psheet__tech-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--brand-accent-line, #f6c894);
+  border-radius: 999px;
+  color: var(--brand-accent-ink, #b35900);
+  background: var(--brand-accent-soft, #fdf1e3);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.psheet__tech-trigger:hover,
+.psheet__tech-trigger[aria-expanded="true"] {
+  border-color: var(--brand-accent-ink, #b35900);
+}
+.psheet__tech-trigger:focus-visible,
+.psheet__tech-popover button:focus-visible {
+  outline: 2px solid var(--brand-accent-ink, #b35900);
+  outline-offset: 3px;
+}
+.psheet__tech-popover {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  width: min(20rem, 100%);
+  padding: 0.85rem;
+  border: 1px solid var(--brand-accent-line, #f6c894);
+  border-radius: 0.85rem;
+  background: var(--bs-body-bg, #fff);
+  box-shadow: 0 0.5rem 1.5rem #0002;
+}
+.psheet__tech-popover::before {
+  content: '';
+  position: absolute;
+  top: -0.35rem;
+  right: 1.5rem;
+  width: 0.6rem;
+  height: 0.6rem;
+  background: var(--bs-body-bg, #fff);
+  border-top: 1px solid var(--brand-accent-line, #f6c894);
+  border-left: 1px solid var(--brand-accent-line, #f6c894);
+  transform: rotate(45deg);
+}
+.psheet__tech-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+}
+.psheet__tech-popover-head button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+  padding: 0 0.4rem;
+  cursor: pointer;
 }
 /* Title row: label on the left, GitHub / Live demo on the right; the
    buttons drop to their own line under the title when the column is too
