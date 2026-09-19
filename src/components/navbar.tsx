@@ -4,14 +4,9 @@ import Container from 'react-bootstrap/Container';
 import Nav from 'react-bootstrap/Nav';
 import NavDropdown from 'react-bootstrap/NavDropdown';
 import { useActiveSection } from '../hooks/useActiveSection';
-import { useSiteContent } from '../hooks/useSiteContent';
+import { pickMedia, useSiteContent } from '../hooks/useSiteContent';
 import { assetUrl } from '../lib/assetUrl';
 import { SECTIONS } from '../lib/knobs';
-
-/** The brand mark, served from the CDN alongside every other image rather
- *  than bundled -- the same object index.html points the favicon at, so the
- *  tab icon and the navbar icon can never drift apart. */
-const BRAND_MARK = assetUrl('tools_icon/tab_logo.png');
 
 /** site_content section "navbar". */
 interface NavbarContent {
@@ -37,13 +32,14 @@ function Navbar() {
   const { pathname } = useLocation();
   const { activeSection, setActiveSection } = useActiveSection();
 
-  // Brand name: the "navbar" section, else the site owner's name. Rendered
-  // empty while the content fetch is in flight rather than flashing a
-  // fallback -- the mark alone holds the space.
-  const { content } = useSiteContent();
+  // Brand name: the "navbar" section, else the site owner's name. Both the
+  // text and database-backed mark stay empty while the content fetch is in
+  // flight rather than flashing stale fallback content.
+  const { content, media } = useSiteContent();
   const navbarContent = (content.navbar ?? {}) as NavbarContent;
   const owner = (content.personal_statement as { owner?: string } | undefined)?.owner;
   const brandName = navbarContent.name ?? owner ?? '';
+  const brandMark = assetUrl(pickMedia(media, 'navbar', 'tab_logo'));
 
   // Clicking the brand goes home and clears the scroll-spy highlight.
   const goHome = (e: React.MouseEvent) => {
@@ -85,14 +81,15 @@ function Navbar() {
             of the bar used to be empty on every screen. */}
         <nav className="site-nav d-flex justify-content-between align-items-center py-3" aria-label="Main">
 
-          {/* Brand: logo + name, home link. The mark is served from S3 like
-              every other image (tools_icon/tab_logo.png) rather than bundled,
-              so it can be swapped without a redeploy -- same object the
-              favicon points at. The name comes from site_content "navbar";
+          {/* Brand: logo + name, home link. The mark comes from the
+              site_media ("navbar", "tab_logo") slot, so it can be swapped
+              without a frontend redeploy. The name comes from site_content "navbar";
               with no row it falls back to personal_statement.owner, so a
               deployment only has to set the name in one place. */}
           <a className="site-brand" href="/" onClick={goHome} aria-label={`${brandName || 'Home'} — home`}>
-            <img className="site-brand__mark" src={BRAND_MARK} alt="" aria-hidden="true" width={32} height={32} />
+            {brandMark && (
+              <img className="site-brand__mark" src={brandMark} alt="" aria-hidden="true" width={32} height={32} />
+            )}
             {brandName && <span className="site-brand__name">{brandName}</span>}
           </a>
 

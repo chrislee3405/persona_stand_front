@@ -2033,11 +2033,6 @@
   border-radius: 0.75rem;
   background: transparent;
   cursor: pointer;
-  transition: background-color 0.18s ease;
-}
-.psheet__video-btn:hover,
-.psheet__video-btn:focus-visible {
-  background-color: rgba(0, 0, 0, 0.28);
 }
 .psheet__video-btn:focus-visible {
   outline: 3px solid var(--brand-accent, #f08000);

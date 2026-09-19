@@ -76,7 +76,7 @@ After passing checks, **every branch push**, including dev, builds and publishes
 
 Publication uses the automatic `GITHUB_TOKEN` with `packages: write`; no AWS settings are needed. Keep VITE_CDN_BASE. Grant ec2yml Actions read access in the GHCR package settings. Keep commit tags and tested images; changed image contents require a new source commit.
 
-The ec2yml repository selects frontend/backend GHCR digests and runs the same combined Playwright workflow for minor and major updates. Minor updates stay in GHCR. An explicitly approved major release copies the successful tested images to ECR without rebuilding, then EC2 deploys only promoted ECR digests. Application pushes can happen in either order. Setup and cleanup instructions are in ec2yml Part A.6.
+The ec2yml repository selects frontend/backend GHCR digests and runs the same combined Playwright workflow for minor and major updates. Minor updates stay in GHCR. An explicitly approved major release copies the successful tested images to ECR without rebuilding, then EC2 deploys only promoted ECR digests. Application pushes can happen in either order. One-time infrastructure setup is in ec2yml Part A.6. Repeat the minor/major update steps in Part C.0; minor updates stop after C.0.2.
 
 ## Scope and known limits
 
