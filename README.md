@@ -1,6 +1,6 @@
 # Please find the main setup tutorial in https://github.com/chrislee3405/persona_stand_ec2yml
 
-# current version 0.7.1
+# current version 1.0.0
 
 ## Automated tests
 
