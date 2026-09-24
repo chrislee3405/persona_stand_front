@@ -9,6 +9,8 @@ export interface ProjectVideo {
   srcUrl: string;
   posterUrl?: string;
   caption?: string;
+  /** Show the browser's own playback bar (seek, time, volume). Off by default. */
+  playbackBar?: boolean;
 }
 
 /** Everything <ProjectSheet> needs, pre-resolved (no S3 keys, no lookups). */
@@ -34,11 +36,14 @@ export interface ProjectSheetData {
  * left column with the write-up (overview / features / tech / links) and a
  * scrolling right column of feature-demo videos.
  *
- * VIDEO PLAYBACK. Each clip plays ONCE, automatically, the first time it
- * scrolls into view, and then stops on its last frame with a centred
- * play button offering a replay. Only one plays at a time: an
- * IntersectionObserver scoped to the sheet's scroll area starts whichever
- * clip is most in view and pauses the rest. Skipped entirely under
+ * VIDEO PLAYBACK. Whichever clip is most in view plays, and only that one:
+ * an IntersectionObserver scoped to the sheet's scroll area starts it and
+ * pauses the rest. Scrolling away FREEZES a clip rather than resetting it,
+ * and scrolling back plays it on from that frame, so a half-watched demo is
+ * never restarted or stranded mid-way. A clip that reaches its end stops on
+ * its last frame with a centred play button offering a replay, and is not
+ * auto-started again. Nor is one the visitor paused by hand: that is a
+ * decision and it sticks until they press play. Skipped entirely under
  * `prefers-reduced-motion` -- every clip stays on its poster with the
  * button available.
  *
@@ -47,9 +52,9 @@ export interface ProjectSheetData {
  * Hide) failure, and 2.2.2 is Level A: auto-playing motion running past
  * five seconds needs a mechanism to stop it, and honouring
  * prefers-reduced-motion does not substitute for one -- most people have
- * never set it. Playing once and stopping means the motion is finite even
- * if the button is never touched, and the button is a real pause control
- * while a clip is running.
+ * never set it. Resuming rather than looping keeps that: no clip is
+ * `loop`ed, each one finishes and stays finished, and the button is a real
+ * pause control that the observer then respects.
  *
  * `data` is kept mounted by the caller through the close animation so the
  * panel doesn't blank as it slides away.
@@ -72,10 +77,28 @@ export default function ProjectSheet({
   // Which clip is running right now, by index. Drives the overlay button's
   // icon and label; `null` means nothing is playing.
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
-  // Clips that have already had their one automatic play. A ref, not state:
-  // it must not trigger a render, and it must survive the observer
-  // re-firing as the visitor scrolls the column back and forth.
-  const autoPlayed = useRef<Set<number>>(new Set());
+  // Clips the VISITOR paused by pressing the overlay button. A ref, not
+  // state: it must not trigger a render, and it must survive the observer
+  // re-firing as the column is scrolled back and forth.
+  //
+  // This is the only thing that stops a clip resuming when it scrolls back
+  // into view. It used to be a record of clips that had already had their
+  // one automatic play, which meant scrolling away from a half-watched clip
+  // and back left it frozen mid-frame -- the position was kept but nothing
+  // ever started it again. Autoplay is now continuous: whatever is on
+  // screen plays on from where it stopped. Pressing pause is a decision, so
+  // it is remembered; running out of view is not.
+  const userPaused = useRef<Set<number>>(new Set());
+  // Clips about to be paused by THIS code (the observer, or the one-at-a-time
+  // rule), so onPause can tell them apart from the visitor pausing through a
+  // clip's playback bar -- only the latter is a decision that must stick.
+  const autoPausing = useRef<Set<number>>(new Set());
+  const autoPause = useCallback((i: number) => {
+    const video = videoRefs.current[i];
+    if (!video || video.paused) return;
+    autoPausing.current.add(i);
+    video.pause();
+  }, []);
 
   // Reset the "already played" record whenever a different project opens,
   // so each sheet gets its own first-view autoplay.
@@ -98,7 +121,7 @@ export default function ProjectSheet({
   // effect below so it runs first when `data` changes, clearing the record
   // before anything consults it.
   useEffect(() => {
-    autoPlayed.current = new Set();
+    userPaused.current = new Set();
   }, [data]);
 
   const toggle = useCallback((i: number) => {
@@ -109,24 +132,46 @@ export default function ProjectSheet({
       // its final frame, which is what the button appears to promise.
       if (video.ended) video.currentTime = 0;
       // Pause every other clip first -- one at a time is the whole point.
-      videoRefs.current.forEach((other, j) => {
-        if (other && j !== i) other.pause();
+      videoRefs.current.forEach((_, j) => {
+        if (j !== i) autoPause(j);
       });
+      userPaused.current.delete(i);
       void video.play().catch(() => {});
       setPlayingIndex(i);
     } else {
+      // Deliberate: this clip stays paused even when it is the one on
+      // screen, until the visitor presses play again.
+      userPaused.current.add(i);
       video.pause();
       setPlayingIndex(null);
     }
+  }, [autoPause]);
+
+  // Keep the overlay button honest when a clip is started or stopped some
+  // other way -- in practice, through its playback bar.
+  const onVideoPlay = useCallback((i: number) => {
+    videoRefs.current.forEach((_, j) => {
+      if (j !== i) autoPause(j);
+    });
+    userPaused.current.delete(i);
+    setPlayingIndex(i);
+  }, [autoPause]);
+  const onVideoPause = useCallback((i: number) => {
+    if (autoPausing.current.delete(i)) return; // paused by us, not the visitor
+    userPaused.current.add(i);
+    setPlayingIndex(cur => (cur === i ? null : cur));
   }, []);
 
-  // One clip auto-plays at a time, on first view only.
+  // One clip plays at a time: whichever is most on screen, resumed from
+  // where it last stopped.
   useEffect(() => {
     if (!open) return;
     const root = scrollRef.current;
     if (!root) return;
     const vids = videoRefs.current.filter((v): v is HTMLVideoElement => !!v);
     if (vids.length === 0) return;
+    const indexOf = new Map(vids.map(v => [v, videoRefs.current.indexOf(v)]));
+    const pausing = autoPausing.current;
 
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       return; // leave every clip on its poster; the button still works
@@ -144,14 +189,15 @@ export default function ProjectSheet({
       videoRefs.current.forEach((v, i) => {
         if (!v) return;
         if (v === active && best >= 0.5) {
-          // Only the FIRST time this clip comes into view. After that the
-          // visitor decides, via the button.
-          if (!autoPlayed.current.has(i)) {
-            autoPlayed.current.add(i);
+          // Play on from wherever it stopped -- v.pause() below never
+          // rewinds, so this resumes rather than restarts. Two things are
+          // left alone: a clip the visitor paused on purpose, and one that
+          // has run to the end (replaying that is what the button is for).
+          if (v.paused && !v.ended && !userPaused.current.has(i)) {
             void v.play().then(() => setPlayingIndex(i)).catch(() => {});
           }
         } else if (!v.paused) {
-          v.pause(); // freeze -- do not reset currentTime
+          autoPause(i); // freeze -- do not reset currentTime
           setPlayingIndex(cur => (cur === i ? null : cur));
         }
       });
@@ -169,9 +215,13 @@ export default function ProjectSheet({
     vids.forEach(v => io.observe(v));
     return () => {
       io.disconnect();
-      vids.forEach(v => v.pause());
+      vids.forEach(v => {
+        if (v.paused) return;
+        pausing.add(indexOf.get(v)!);
+        v.pause();
+      });
     };
-  }, [open, data]);
+  }, [open, data, autoPause]);
 
   const githubUrl = safeHref(data?.githubUrl);
   const demoUrl = safeHref(data?.demoUrl);
@@ -262,11 +312,14 @@ export default function ProjectSheet({
                 {v.caption && (
                   <figcaption className="psheet__video-head">{v.caption}</figcaption>
                 )}
-                <div className="psheet__video-frame">
+                <div className={`psheet__video-frame${v.playbackBar ? ' has-playback-bar' : ''}`}>
                   {/* preload="metadata": first frame + duration on mount so
                       there's no black box; the full clip is usually already
                       cache-warmed by useMediaPrefetch, else it streams here.
-                      No `loop` -- see the component docstring. */}
+                      No `loop` -- see the component docstring.
+                      With `playbackBar` the native controls are shown and
+                      reachable by keyboard / screen reader; the overlay
+                      button then stops short of them (see Home.css). */}
                   <video
                     ref={el => { videoRefs.current[i] = el; }}
                     src={v.srcUrl}
@@ -274,8 +327,11 @@ export default function ProjectSheet({
                     muted
                     playsInline
                     preload="metadata"
-                    tabIndex={-1}
-                    aria-hidden="true"
+                    controls={v.playbackBar}
+                    tabIndex={v.playbackBar ? undefined : -1}
+                    aria-hidden={v.playbackBar ? undefined : 'true'}
+                    onPlay={() => onVideoPlay(i)}
+                    onPause={() => onVideoPause(i)}
                     onEnded={() => setPlayingIndex(cur => (cur === i ? null : cur))}
                   />
                   {/* The pause/replay control. A real <button>, layered over

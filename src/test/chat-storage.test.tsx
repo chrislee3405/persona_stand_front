@@ -4,10 +4,10 @@ import { ChatProvider } from '../context/ChatContext';
 import { useChat, type Message } from '../hooks/useChat';
 
 describe('chat persistence', () => {
-  it('restores blocked and withheld message status and the conversation after a reload', () => {
+  it('restores a not-sent message status and the conversation after a reload', () => {
     const messages: Message[] = [
-      { id: 'blocked', sender: 'user', text: 'Rejected test message', status: 'blocked' },
-      { id: 'withheld', sender: 'user', text: 'Unanswered test message', status: 'withheld' },
+      { id: 'refused', sender: 'user', text: 'Rejected test message', status: 'not_sent' },
+      { id: 'delivered', sender: 'user', text: 'Ordinary test message' },
     ];
     const first = renderHook(() => useChat(), { wrapper: ChatProvider });
     act(() => {

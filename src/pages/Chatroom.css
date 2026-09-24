@@ -712,3 +712,13 @@ span.chatroom__avatar {
   text-align: right;
   color: #b02a1e;
 }
+.msg__retry {
+  display: block;
+  margin-top: .35rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: .8rem;
+}

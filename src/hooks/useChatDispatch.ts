@@ -11,6 +11,8 @@ import {
   TYPING_IDLE_MS,
   FIRST_REPLY_TYPING_DELAY_MS,
   FRAGMENT_TYPING_DELAY_MS,
+  WAIT_CONTINUE_IDLE_MS,
+  NO_REPLY_NOTICE_IDLE_MS,
 } from '../lib/knobs';
 
 function generateMessageId(): string {
@@ -77,6 +79,28 @@ const REJECT_FALLBACKS: Record<number, string> = {
   429: PENDING_LIMIT_WARNING,
 };
 
+// Shown once the visitor has sat quietly after a `no_reply` turn (see
+// NO_REPLY_NOTICE_IDLE_MS): the message arrived, and silence was the answer.
+function noReplyNotice(personaName: string): string {
+  return personaName
+    ? `Seen. ${personaName} didn't think that one needed a reply. Ask another question anytime.`
+    : "Seen. That one didn't need a reply. Ask another question anytime.";
+}
+
+// What an idle visitor sets off, per the status of the turn that went quiet.
+//   'continue' -- after `wait`: answer the held message as it stands.
+//   'notice'   -- after `no_reply`: explain the silence.
+type IdleAction = 'continue' | 'notice';
+
+const IDLE_ACTION_DELAY_MS: Record<IdleAction, number> = {
+  continue: WAIT_CONTINUE_IDLE_MS,
+  notice: NO_REPLY_NOTICE_IDLE_MS,
+};
+
+// A message turn sends new text; a continue turn sends none and asks the
+// server to answer what it is already holding (ChatService.handle_continue_turn).
+type TurnKind = 'message' | 'continue';
+
 // --- Rapid-fire fragment batching -------------------------------------------
 // A submitted message isn't dispatched to the backend immediately. It's held
 // briefly first (INITIAL_HOLD_MS / TYPING_IDLE_MS -- see src/lib/knobs.ts), in
@@ -112,6 +136,9 @@ interface UseChatDispatchArgs {
   // dismissed the terms popup and then hit send, or the backend rejected a
   // turn with HTTP 403. Re-opens the (dismissible) terms popup.
   onConsentRequired: () => void;
+  // The persona's display name, for the no-reply notice. Empty while the
+  // site content is loading; the notice then reads without a name.
+  personaName?: string;
 }
 
 /**
@@ -123,7 +150,7 @@ interface UseChatDispatchArgs {
  * message objects themselves (Message.status), so the mark survives a
  * refresh alongside the text it describes -- see markMessages below.
  */
-export function useChatDispatch({ consented, isVerified, onConsentRequired }: UseChatDispatchArgs) {
+export function useChatDispatch({ consented, isVerified, onConsentRequired, personaName = '' }: UseChatDispatchArgs) {
   const {
     setMessages,
     conversationId, setConversationId,
@@ -186,7 +213,26 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
   // exactly one backend turn / one reply.
   const isHoldingRef = useRef(false);
 
+  // Bubbles the backend is HOLDING: a turn that came back `status: 'wait'`
+  // is a message the persona judged mid-thought and is waiting to answer
+  // together with whatever comes next.
+  //
+  // Not to be confused with heldMessageIdsRef above, which is the local
+  // batching buffer -- that one is text not yet sent at all. These have been
+  // sent, stored, and deliberately not answered yet.
+  //
+  // Tracked because their fate depends on the NEXT message. If it is
+  // rejected, it was the continuation they were waiting for, and both are
+  // dead (the backend releases them at the same moment -- see
+  // ChatService._discard_pending_group). A `no_reply` turn is not held and
+  // never goes in here: the persona decided that message needed no answer,
+  // so a later rejection has nothing to do with it.
+  const heldTurnIdsRef = useRef<string[]>([]);
+
   const [inputMessage, setInputMessage] = useState('');
+  // The composer's text as of the latest keystroke, for the idle timer below,
+  // which fires long after the render that armed it.
+  const inputMessageRef = useRef('');
   // Count of this session's messages currently in flight (sent, reply not
   // yet fully revealed) -- not a boolean, since up to MAX_PENDING_MESSAGES
   // can be in flight at once (send button stays clickable throughout, per
@@ -213,38 +259,58 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   // Marks the user bubbles of one turn as not part of the conversation.
   //
-  // 'blocked'  -- the backend refused the message before storing it: the
-  //               privacy gate (400), combined text over MAX_MESSAGE_LENGTH
-  //               (413), the pending cap or the daily allowance (429),
-  //               missing consent (403), or a transport failure.
-  // 'withheld' -- the backend DID store it, then dropped it from the
-  //               conversation: the response gate withheld a reply, or
-  //               generation failed and the row was retagged. The persona
-  //               will never see it.
-  //
-  // The distinction is the reason these are two values and not one flag --
-  // "not sent" and "not answered" are different things to tell someone.
+  // One status covers every route there: refused by a gate before it was
+  // stored (400/403/413/429 or a transport failure), stored and then dropped
+  // (the response gate withheld a reply, generation failed, or a held
+  // message was released when the message completing it was rejected).
+  // Whichever it was, the persona never saw the text and never will -- see
+  // MessageStatus for why the server's finer distinction stays off screen.
   //
   // This writes ONTO the message objects rather than into two id lists held
   // here. The lists were component state while `messages` is persisted to
   // sessionStorage, so a refresh restored the text without the status and a
   // rejected message came back looking delivered -- leaving the visitor
   // believing the persona had received something it never did.
-  const markMessages = useCallback((ids: string[], status: MessageStatus) => {
+  const markMessages = useCallback((ids: string[], status: MessageStatus | undefined) => {
     if (ids.length === 0) return;
     setMessages(prev =>
       prev.map(m => (ids.includes(m.id) ? { ...m, status } : m)),
     );
   }, [setMessages]);
 
-  // Cancel any pending fragment-batch flush timer on unmount so it can't
-  // fire a dispatchTurn after the component is gone. Held-but-unflushed
-  // text is dropped -- acceptable for now (polish later).
+  // Mark one turn's bubbles as refused, and take any held bubbles down with
+  // them -- a rejected message is the continuation the held ones were
+  // waiting for, and the backend releases them at the same moment (see
+  // ChatService._discard_pending_group).
+  const markRejected = useCallback((groupIds: string[]) => {
+    const held = heldTurnIdsRef.current;
+    heldTurnIdsRef.current = [];
+    markMessages([...groupIds, ...held], 'not_sent');
+  }, [markMessages]);
+
+  // What the visitor's silence sets off after a reply-less turn, and when.
+  // See armIdleAction below. One timer and one pending action at a time.
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleActionRef = useRef<IdleAction | null>(null);
+  // Bumped for every turn sent. A turn's status may arm an idle action only
+  // if no newer turn has been sent since -- otherwise an old `wait` landing
+  // late would re-arm a timer the newer message already cancelled.
+  const turnSeqRef = useRef(0);
+
+  // A buffered bubble is explicitly queued. Leaving chat cancels its timer
+  // and keeps the text as an unsent, recoverable bubble in the shared provider.
+  // Refresh recovers the persisted queued status as unsent too.
   useEffect(() => {
     return () => {
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      const unsent = heldMessageIdsRef.current;
+      heldMessageIdsRef.current = [];
+      heldTextRef.current = '';
+      isHoldingRef.current = false;
+      markMessages(unsent, 'not_sent');
     };
-  }, []);
+  }, [markMessages]);
 
   // Fire the actual backend request for one turn's worth of text. The text
   // (and the ids of the bubbles it came from) are passed in rather than
@@ -253,7 +319,21 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
   // batching cuts how often concurrent sends happen but sequential bursts
   // (one group fully sent, a new one started before its reply returns)
   // still need the chain.
-  const dispatchTurn = async (textToSend: string, groupIds: string[]) => {
+  //
+  // `kind` 'continue' sends no text: it asks the server to answer the
+  // message(s) it is holding after a `wait` (see runIdleAction). Those are
+  // already stored, so no failure of the continue itself crosses them out --
+  // the server keeps holding them and answers them with the next message.
+  // Only a 2xx saying they were withheld (userMessageKept: false) does.
+  //
+  // `onStatus` hears the server's status for a 2xx turn, before any reply
+  // is revealed.
+  const dispatchTurn = async (
+    textToSend: string,
+    groupIds: string[],
+    kind: TurnKind = 'message',
+    onStatus?: (status: string) => void,
+  ) => {
     // Register this send in the chain before awaiting anything -- a THIRD
     // message sent while both the first and second are still pending must
     // wait behind the second (which is itself waiting behind the first),
@@ -301,10 +381,18 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // trusted as proof of ownership. (A stale/invalid conversationId
       // is handled entirely server-side too — it transparently starts a
       // new conversation and returns its id, rather than erroring.)
-      const requestBody = {
-        text: textToSend,
-        ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {})
-      };
+      const isContinue = kind === 'continue';
+      // A continue belongs to a conversation by definition; without one there
+      // is nothing held to answer.
+      if (isContinue && !conversationIdRef.current) return;
+      const requestBody = isContinue
+        ? { conversationId: conversationIdRef.current }
+        : {
+            text: textToSend,
+            ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {})
+          };
+      const endpointFor = (invite: boolean) =>
+        `${invite ? '/api/invitechat' : '/api/guestchat'}${isContinue ? '/continue' : ''}`;
 
       // postJson supplies the method, JSON header and the httpOnly session
       // cookie (see lib/api.ts). A fresh signal per attempt, so the 401
@@ -313,9 +401,10 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       const postChat = (endpoint: string) =>
         postJson(endpoint, requestBody, AbortSignal.timeout(CHAT_REQUEST_TIMEOUT_MS));
 
+      markMessages(groupIds, undefined);
       armWaitTyping();
       const sentAsInvite = isVerifiedRef.current;
-      let response = await postChat(sentAsInvite ? '/api/invitechat' : '/api/guestchat');
+      let response = await postChat(endpointFor(sentAsInvite));
 
       if (response.status === 401 && sentAsInvite) {
         // This tab believes the session is verified, but the server says it
@@ -330,7 +419,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
         setVerified(false);
         setCode('');
         setInputCode('');
-        response = await postChat('/api/guestchat');
+        response = await postChat(endpointFor(false));
       }
 
       // We got an HTTP response back. A 5xx means the backend is down or
@@ -339,13 +428,27 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // request that never got a response at all.
       setIsOffline(response.status >= 500);
 
+      if (isContinue && !response.ok) {
+        // Refused before anything ran (consent, ownership, the in-flight
+        // cap) or failed behind the proxy. Either way the server still holds
+        // the messages and answers them with the next one, so nothing is
+        // crossed out. Only consent and a server fault are worth a word.
+        if (response.status === 403) {
+          onConsentRequired();
+        } else if (response.status >= 500) {
+          const text = await errorDetail(response, "The server ran into a problem answering that. Please try again.");
+          setMessages(prev => [...prev, createMessage(text, 'system')]);
+        }
+        return;
+      }
+
       if (response.status === 403) {
         // Consent was missing, so ChatService rejected the turn before
         // append_message ever ran -- the message is NOT in the conversation.
         // Paint it red for the same reason 400/413/429 are painted red, then
         // re-show the popup (e.g. the session's consent record was cleared
         // between useConsent's mount check and now).
-        markMessages(groupIds, 'blocked');
+        markRejected(groupIds);
         onConsentRequired();
         return;
       }
@@ -360,7 +463,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
         // paint exactly those bubbles red so the user sees which pieces
         // didn't go through.
         setWarningMessage(await errorDetail(response, REJECT_FALLBACKS[response.status]));
-        markMessages(groupIds, 'blocked');
+        markRejected(groupIds);
         return;
       }
 
@@ -371,7 +474,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
         // model_orchestration comes back as a 200 carrying a system turn.
         // So the bubble is not part of the conversation and is marked as
         // such, alongside a system notice explaining what happened.
-        markMessages(groupIds, 'blocked');
+        markRejected(groupIds);
         const text = await errorDetail(
           response,
           response.status >= 500
@@ -386,16 +489,51 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       serverAccepted = true;
 
       const data = await response.json();
+      // A turn no longer always carries a reply. The backend's readiness gate
+      // (ChatService.handle_chat_turn) answers with a `status`:
+      //   'respond'    -- turns hold the reply, as before
+      //   'wait'       -- the message reads as mid-thought; the server is
+      //                   holding it and will answer it together with the
+      //                   next one
+      //   'no_reply'   -- nothing that calls for an answer ("ok, thanks")
+      //   'superseded' -- a newer message overtook this turn's reply
+      // The last three come back with `turns: []` ON PURPOSE, so an empty
+      // array is only malformed when the server claims to have replied.
+      // Crucially none of them is a reason to resend: the text is stored and
+      // the server is tracking it, so resending would duplicate the message.
+      // An older backend omits `status` entirely and always sends turns,
+      // which still reads as 'respond'.
+      const status: string = typeof data?.status === 'string' ? data.status : 'respond';
+      const repliesExpected = status === 'respond';
+
       if (
         !data ||
         !Array.isArray(data.turns) ||
-        data.turns.length === 0 ||
+        (repliesExpected && data.turns.length === 0) ||
         !data.turns.every((turn: unknown) => typeof turn === 'string' && turn.trim()) ||
         typeof data.conversationId !== 'string'
       ) {
         throw new Error(`Malformed response: ${JSON.stringify(data)}`);
       }
 
+      // Remember or release the held set, per the rules above.
+      //   'wait'       -- these bubbles are now held, waiting on the next
+      //                   message. A rejection of that message kills them.
+      //   'superseded' -- also still pending: a newer message overtook this
+      //                   turn, and whichever turn finally answers covers
+      //                   these too, so they stay held until it does.
+      //   'no_reply'   -- the persona has dealt with them by deciding they
+      //                   need no answer. Nothing is waiting on anything, so
+      //                   a later rejection must leave them alone. This is
+      //                   the case that must NOT accumulate.
+      //   'respond'    -- answered, along with anything held before them.
+      const withheldHeld = heldTurnIdsRef.current;
+      if (status === 'wait' || status === 'superseded') {
+        heldTurnIdsRef.current = [...heldTurnIdsRef.current, ...groupIds];
+      } else {
+        heldTurnIdsRef.current = [];
+      }
+      onStatus?.(status);
       // Capture the backend-assigned id — no-op after the first message,
       // since it stays the same for the rest of the session. Set the ref
       // immediately (synchronously) alongside the state -- a message sent
@@ -408,7 +546,12 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // rather than after the notice has finished appearing. Strict === false
       // so an older backend that omits the field is treated as "kept".
       if (data.userMessageKept === false) {
-        markMessages(groupIds, 'withheld');
+        // The whole held group goes, not just this turn's bubbles: the reply
+        // that was withheld was answering all of them, and the backend
+        // retags all of them out of the conversation (see ChatService step
+        // 3b). Held ids were cleared just above by the 'respond' branch, so
+        // they are read from `withheldHeld` captured before that.
+        markMessages([...groupIds, ...withheldHeld], 'not_sent');
       }
 
       if (data.conversationId !== conversationIdRef.current) {
@@ -442,6 +585,14 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // suitable response"), otherwise a normal persona turn. Anything that
       // isn't explicitly 'system' is treated as 'backend'.
       const turns = data.turns as string[];
+      if (!repliesExpected) {
+        // Nothing to reveal, and nothing to resend. The user's bubble stays
+        // exactly as it is -- it was received and stored, so marking it
+        // 'not_sent' would be a lie. A 'wait' message is answered when the
+        // next one arrives (the reply to that turn covers both), or by a
+        // continue if the visitor goes quiet instead -- see runIdleAction.
+        return;
+      }
       const turnSender: Message['sender'] = data.sender === 'system' ? 'system' : 'backend';
       for (let i = 0; i < turns.length; i++) {
         if (i > 0) {
@@ -480,8 +631,10 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
       // whether it arrived, so it is reported as such rather than claimed
       // either way.
       const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
-      if (!serverAccepted) {
-        markMessages(groupIds, 'blocked');
+      // A continue carries no bubbles of its own, and the ones it was for are
+      // still held by the server whether or not this request arrived.
+      if (!serverAccepted && kind === 'message') {
+        markRejected(groupIds);
       }
       const errorMessage = createMessage(
         serverAccepted
@@ -506,6 +659,46 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
     }
   };
 
+  // --- When the visitor goes quiet after a reply-less turn ----------------
+  // `wait` is the readiness gate's guess that more is coming, and a visitor
+  // who then types nothing proves it wrong: after WAIT_CONTINUE_IDLE_MS of an
+  // empty, untouched input, the held message is answered as it stands.
+  // `no_reply` is not a guess -- nothing needed an answer -- but the visitor
+  // may still be waiting for one, so after NO_REPLY_NOTICE_IDLE_MS a notice
+  // says the message was seen.
+
+  const clearIdleAction = () => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = null;
+    idleActionRef.current = null;
+  };
+
+  const runIdleAction = () => {
+    const action = idleActionRef.current;
+    idleTimerRef.current = null;
+    idleActionRef.current = null;
+    // Text in the box, or a group in the batching hold, means the visitor is
+    // not quiet after all -- that send will carry the thought on.
+    if (!action || inputMessageRef.current.trim() || isHoldingRef.current) return;
+
+    if (action === 'notice') {
+      setMessages(prev => [...prev, createMessage(noReplyNotice(personaName), 'system')]);
+      return;
+    }
+    if (heldTurnIdsRef.current.length === 0) return;
+    turnSeqRef.current += 1;
+    // One pending unit, like a message group -- released in dispatchTurn's
+    // `finally`. Its result arms nothing further: a continue always answers.
+    setPendingCount(prev => prev + 1);
+    void dispatchTurn('', [], 'continue');
+  };
+
+  const armIdleAction = (action: IdleAction) => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleActionRef.current = action;
+    idleTimerRef.current = setTimeout(runIdleAction, IDLE_ACTION_DELAY_MS[action]);
+  };
+
   // Send whatever's currently held as one combined turn. Called by the hold
   // timer (INITIAL_HOLD_MS with an empty input, or TYPING_IDLE_MS after the
   // user stops typing a follow-up); on unmount it's simply cancelled -- see
@@ -521,7 +714,15 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
     heldTextRef.current = '';
     heldMessageIdsRef.current = [];
     isHoldingRef.current = false;
-    void dispatchTurn(textToSend, groupIds);
+    const seq = ++turnSeqRef.current;
+    void dispatchTurn(textToSend, groupIds, 'message', status => {
+      // A newer turn went out while this one was in flight; its status is
+      // the one that describes the conversation now.
+      if (seq !== turnSeqRef.current) return;
+      if (status === 'wait') armIdleAction('continue');
+      else if (status === 'no_reply') armIdleAction('notice');
+      else clearIdleAction();
+    });
   };
 
   // (Re)arm the flush timer. Any previously-pending timer is cleared, so a
@@ -536,12 +737,8 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
-    // maxLength on the input should already prevent this, but keep the
-    // same belt-and-suspenders check as the other gates -- the backend's
-    // MAX_MESSAGE_LENGTH is the real enforcement. (This guards one
-    // over-long piece; a group that only exceeds the limit once combined
-    // is caught by the backend -> 413 branch in dispatchTurn.)
-    if (inputMessage.length > MAX_MESSAGE_LENGTH) {
+    // The server counts Unicode code points, as Python len(str) does.
+    if (Array.from(inputMessage).length > MAX_MESSAGE_LENGTH) {
       setWarningMessage(MESSAGE_TOO_LONG_WARNING);
       return;
     }
@@ -563,16 +760,23 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
     // exactly one backend turn. UX nicety only (see MAX_PENDING_MESSAGES)
     // -- the backend enforces the real cap regardless.
     const pendingCap = MAX_PENDING_MESSAGES[isVerified ? 'invite' : 'guest'];
-    if (!isHoldingRef.current && pendingCount >= pendingCap) {
+    const combined = heldTextRef.current
+      ? `${heldTextRef.current} ${inputMessage.trim()}` : inputMessage.trim();
+    const startsNewBatch = !isHoldingRef.current || Array.from(combined).length > MAX_MESSAGE_LENGTH;
+    if (startsNewBatch && pendingCount >= pendingCap) {
       setWarningMessage(PENDING_LIMIT_WARNING);
-      return;
+      return; // Preserve the draft and the existing valid batch.
     }
+    if (isHoldingRef.current && startsNewBatch) flushHeldMessage();
     setWarningMessage(null);
+    // The visitor has spoken: a held message now travels with this one, and
+    // a no_reply needs no explaining.
+    clearIdleAction();
 
     // Every piece gets its own bubble immediately, exactly as before --
     // "A" then "B" shows as two bubbles, even though the backend request
     // will carry the single joined string "A B".
-    const newMessage = createMessage(inputMessage, 'user');
+    const newMessage = { ...createMessage(inputMessage, 'user'), status: 'queued' as const };
     setMessages(prev => [...prev, newMessage]);
 
     // Accumulate into the held buffer (plain join, single space).
@@ -589,6 +793,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
     }
 
     setInputMessage('');
+    inputMessageRef.current = '';
 
     // Input is empty again -- arm the short grace window. A keystroke in
     // handleInputChange extends this to TYPING_IDLE_MS.
@@ -597,11 +802,19 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired }: Us
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setInputMessage(e.target.value);
+    inputMessageRef.current = e.target.value;
     // A keystroke while a group is held means the user is composing a
     // follow-up -- extend the wait to the longer typing-idle window
     // (reset on every keystroke).
     if (isHoldingRef.current) scheduleHoldFlush(TYPING_IDLE_MS);
+    // The visitor is not idle -- restart the quiet period from now.
+    if (idleActionRef.current) armIdleAction(idleActionRef.current);
   };
 
-  return { inputMessage, handleInputChange, handleSend, warningMessage, isAwaitingReply: typingCount > 0, isOffline };
+  const restoreDraft = (text: string) => {
+    setInputMessage(text);
+    inputMessageRef.current = text;
+  };
+
+  return { inputMessage, restoreDraft, handleInputChange, handleSend, warningMessage, isAwaitingReply: typingCount > 0, isOffline };
 }

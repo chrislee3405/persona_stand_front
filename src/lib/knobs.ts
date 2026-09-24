@@ -265,6 +265,22 @@ export const TYPING_JITTER_RATIO = 0.25;
 export const INITIAL_HOLD_MS = 2000;
 export const TYPING_IDLE_MS = 5000;
 
+/** When the persona sends nothing back and the visitor then goes quiet too.
+ *  "Quiet" means the input sits EMPTY and untouched: every keystroke
+ *  restarts the wait, a send cancels it, and a wait that ends with text in
+ *  the box does nothing (that text is on its way, and its send covers it).
+ *  WAIT_CONTINUE_IDLE_MS:  after a "wait" -- the persona is holding the
+ *                   message for the rest of the thought -- how long before the
+ *                   hold is taken as a wrong guess and the held message is
+ *                   answered as it stands (POST .../continue). Well above the
+ *                   batching windows: "one sec, let me check" deserves a real
+ *                   pause, and replying a little early costs less than never.
+ *  NO_REPLY_NOTICE_IDLE_MS: after a "no_reply" -- nothing needed an answer --
+ *                   how long before a quiet "Seen" notice explains the
+ *                   silence, for a visitor who is still waiting on a reply. */
+export const WAIT_CONTINUE_IDLE_MS = 12000;
+export const NO_REPLY_NOTICE_IDLE_MS = 10000;
+
 /** "Persona is typing" three-dot bubble timing. The bubble is never shown
  *  instantly -- there is a beat of nothing first, so a quick reply never
  *  flashes it.
@@ -272,9 +288,52 @@ export const TYPING_IDLE_MS = 5000;
  *                   long to wait before the bubble appears while the first
  *                   reply fragment is still pending. If the reply lands
  *                   sooner, the bubble is skipped entirely.
+ *
+ *                   IT ALSO STANDS IN FOR A SIGNAL THE BACKEND DOES NOT
+ *                   SEND. A turn is one request/response, so the browser
+ *                   cannot know when generation actually starts -- only
+ *                   that it asked. The backend's readiness gate
+ *                   (ChatService.handle_chat_turn) may answer with
+ *                   status "wait" or "no_reply", which produces no reply
+ *                   at all; at 300ms the bubble appeared for every such
+ *                   turn and then vanished with nothing after it, so the
+ *                   persona looked like it had started typing and thought
+ *                   better of it.
+ *
+ *                   This value separates the two cases by duration
+ *                   instead. A turn that is not going to reply makes ONE
+ *                   model call and returns in well under a second; a turn
+ *                   that is replying makes four or five and takes several.
+ *                   So the bubble appears only on turns that were always
+ *                   going to be slow.
+ *
+ *                   That gap only exists because the BACKEND was changed
+ *                   to match (ContextGatherer.gather). A held turn used
+ *                   to wait for topic selection and example re-ranking
+ *                   too -- they run concurrently with the readiness
+ *                   check, and the turn ended when the SLOWEST of the
+ *                   three finished. Topic selection carries every topic
+ *                   description in its prompt and is reliably that one,
+ *                   which is why raising this number alone did not stop
+ *                   the flash: the turn genuinely took that long. The
+ *                   gate now cancels the other two the moment it decides
+ *                   not to reply. If that ever changes back, no value
+ *                   here will work.
+ *
+ *                   It is a threshold, not a signal: an unusually slow
+ *                   readiness call can still flash the bubble briefly. The
+ *                   real fix is for the backend to stream a "generating"
+ *                   event, which is a much larger change -- the turn's
+ *                   database session and rate-limit slot would have to be
+ *                   re-scoped around it.
+ *
+ *                   IF YOU RETUNE IT: the backend logs per-stage timings
+ *                   for every turn ("readiness 0.41s ..." -- see
+ *                   turn_metrics.py). Keep this comfortably above the real
+ *                   readiness figure and well below a whole reply.
  *  FRAGMENT_TYPING_DELAY_MS: within the gap between two revealed fragments,
  *                   how long into that gap before the bubble appears. If the
  *                   gap (see TYPING_MS_PER_CHAR etc.) is shorter than this,
  *                   no bubble shows for that gap. */
-export const FIRST_REPLY_TYPING_DELAY_MS = 300;
+export const FIRST_REPLY_TYPING_DELAY_MS = 2500;
 export const FRAGMENT_TYPING_DELAY_MS = 200;

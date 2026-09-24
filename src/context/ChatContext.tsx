@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { ChatContext, type Message } from '../hooks/useChat';
 
 const WELCOME_MESSAGES: Message[] = [
-  { id: 'welcome-1', text: 'This is an AI version of me, built from real background. Interview me the way you\'d text a candidate on a messaging app.', sender: 'system' },
+  { id: 'welcome-1', text: 'An AI version of me, built from my real background. Interview me like you\'d text a candidate.', sender: 'system' },
   { id: 'welcome-2', text: 'Hello!', sender: 'backend' },
 ];
 
@@ -49,7 +49,7 @@ function readStoredMessages(): Message[] {
           (m as Message).sender === 'backend' ||
           (m as Message).sender === 'system'),
     );
-    return messages.length > 0 ? messages : WELCOME_MESSAGES;
+    return messages.length > 0 ? messages.map(m => m.status === 'queued' ? { ...m, status: 'not_sent' as const } : m) : WELCOME_MESSAGES;
   } catch {
     return WELCOME_MESSAGES;
   }

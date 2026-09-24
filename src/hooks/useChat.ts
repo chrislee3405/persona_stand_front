@@ -2,25 +2,12 @@ import { createContext, useContext } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 /**
- * Why a message is not part of the conversation, when it isn't.
- *
- * `undefined` is the normal case and means "delivered". The other two are
- * both rendered red, with different notes, because they are different
- * facts about what happened:
- *  - 'blocked'  the server refused it before it was ever stored (privacy
- *               gate, length, rate limit, consent) -> "Not sent"
- *  - 'withheld' the server DID store it, then dropped it from the
- *               conversation -- the response gate withheld a reply, or
- *               generation failed -> "Not answered"
- *
- * This lives ON THE MESSAGE rather than in two id lists beside it. The
- * lists were component state in useChatDispatch while `messages` is
- * persisted (see ChatProvider), so a refresh brought a rejected message back
- * looking like an ordinary sent one -- the visitor was left believing a
- * message the persona never received had been delivered. Status has to
- * persist with the thing it describes.
+ * Persist delivery state with each bubble. `queued` means no request has been
+ * dispatched yet; navigation/reload makes abandoned queued text recoverably
+ * `not_sent`. Existing rejected/withheld outcomes also use `not_sent`.
+ * An absent status is the normal display state, not a storage/deletion claim.
  */
-export type MessageStatus = 'blocked' | 'withheld';
+export type MessageStatus = 'not_sent' | 'queued';
 
 export interface Message {
   id: string;

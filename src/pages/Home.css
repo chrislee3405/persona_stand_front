@@ -100,6 +100,14 @@
   display: inline-flex;
   flex: 0 0 auto;
 }
+/* Below 430px the name wraps and this icon drops onto its own line, with
+   the hint bubble misplaced above the name. Take it out entirely: a
+   display:none element never intersects, so <ChatLauncher>'s observer
+   reports it as gone and the floating bottom-right button (with its own
+   introduction bubble) shows from the start, as it does after scrolling. */
+@media (max-width: 429.98px) {
+  .chat-cta { display: none; }
+}
 .chat-cta__btn {
   display: grid;
   place-items: center;
@@ -2014,6 +2022,17 @@
      possible at all: the control is the sibling button below, layered over
      the frame, rather than the video's own controls. */
   pointer-events: none;
+}
+/* Opt-in playback bar (site_project video `playback_bar`): the native
+   controls must be clickable, and the overlay button stops above them so it
+   never swallows a click on the seek bar. 3.5rem clears the control strip in
+   Chromium, Firefox and Safari. */
+.psheet__video-frame.has-playback-bar video {
+  pointer-events: auto;
+}
+.psheet__video-frame.has-playback-bar .psheet__video-btn {
+  aspect-ratio: auto;
+  bottom: 3.5rem;
 }
 
 /* Pause / replay. Sits over the centre of the clip, stays out of the way

@@ -7,15 +7,12 @@ import { useConsent } from '../hooks/useConsent';
 import { useInviteCode } from '../hooks/useInviteCode';
 import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
 import { useShrinkWrapBubbles } from '../hooks/useShrinkWrapBubbles';
-import { useSiteContent } from '../hooks/useSiteContent';
+import { useSiteContent, pickMedia } from '../hooks/useSiteContent';
 import Prose from '../components/Prose';
 import { assetUrl } from '../lib/assetUrl';
 import { markChatVisited } from '../lib/chatVisited';
 import wallpaper from '../assets/icons/chatroom_wallpaper.jpg';
 import './Chatroom.css';
-
-// Header avatar -- a fixed object in the CDN bucket (not a site_media row).
-const AVATAR_URL = assetUrl('about_me/icon.png');
 
 /** site_content section "chatroom" -- header copy for this page. */
 interface ChatroomContent {
@@ -58,12 +55,17 @@ export default function Chatroom() {
   // the fallback: showing a generic label and then swapping it for the
   // real name is a visible flash of the wrong thing. The header keeps its
   // height regardless -- the avatar is a fixed 2.5rem.
-  const { content, loading: contentLoading } = useSiteContent();
+  const { content, media, loading: contentLoading } = useSiteContent();
   const chatroomContent = (content.chatroom ?? {}) as ChatroomContent;
   const owner = (content.personal_statement as { owner?: string } | undefined)?.owner;
   const personaName = contentLoading
     ? ''
     : chatroomContent.name ?? owner ?? PERSONA_NAME_FALLBACK;
+
+  // Header avatar, from the site_media ("chatroom", "chatroom-icon") slot,
+  // so it can be swapped without a frontend redeploy. No row, or a key
+  // assetUrl() refuses, falls back to the monogram below.
+  const avatarUrl = assetUrl(pickMedia(media, 'chatroom', 'chatroom-icon'));
 
   // Invite-code verification: the code/input values, the in-flight flag, the
   // submit handler for the code form, and isVerified (also handed to
@@ -138,10 +140,11 @@ export default function Chatroom() {
   // change handler, the send handler (rapid-fire fragment batching lives in
   // here), the warning-banner text, and the ids of bubbles the backend
   // refused (rendered as red dialog boxes below).
-  const { inputMessage, handleInputChange, handleSend, warningMessage, isAwaitingReply, isOffline } = useChatDispatch({
+  const { inputMessage, restoreDraft, handleInputChange, handleSend, warningMessage, isAwaitingReply, isOffline } = useChatDispatch({
     consented,
     isVerified,
     onConsentRequired: requireConsent,
+    personaName,
   });
 
   // Header status. Once a send has resolved, its outcome (isOffline) is the
@@ -300,16 +303,18 @@ export default function Chatroom() {
         )}
 
         <header className="chatroom__header">
-          {AVATAR_URL && !avatarBroken ? (
+          {avatarUrl && !avatarBroken ? (
             <img
               className="chatroom__avatar"
-              src={AVATAR_URL}
+              src={avatarUrl}
               alt=""
               aria-hidden="true"
               onError={() => setAvatarBroken(true)}
             />
           ) : (
-            <span className="chatroom__avatar" aria-hidden="true">P</span>
+            // Blank while site content loads, like the name beside it --
+            // otherwise the monogram flashes before the image arrives.
+            <span className="chatroom__avatar" aria-hidden="true">{contentLoading ? '' : 'P'}</span>
           )}
           <div>
             <div className="chatroom__title">{personaName}</div>
@@ -403,16 +408,9 @@ export default function Chatroom() {
               }
               // User message (right) or AI reply (left, with tail).
               const isUser = msg.sender === 'user';
-              // Two ways a user bubble stops being part of the conversation, with
-              // the same red styling but different notes -- "Not sent" would be a
-              // false statement for a withheld turn, which the server did receive
-              // and store before dropping it from the history. The status now
-              // lives on the message itself, so it survives a refresh with the
-              // text it describes (see Message.status in ChatContext).
-              const note =
-                isUser && msg.status === 'blocked' ? '✕ Not sent'
-                : isUser && msg.status === 'withheld' ? '✕ Not answered'
-                : null;
+              // Keep queued text visibly distinct until dispatch; legacy failure
+              // markers still show a failure note after a stored-tab upgrade.
+              const note = isUser && msg.status ? (msg.status === 'queued' ? 'Waiting to send' : '✕ Not sent') : null;
               return (
                 <div
                   key={msg.id}
@@ -422,6 +420,12 @@ export default function Chatroom() {
                     <span className="visually-hidden">{isUser ? 'You: ' : 'Persona: '}</span>
                     <span className="msg__text">{msg.text}</span>
                     {note && <span className="msg__blocked-note">{note}</span>}
+                    {isUser && msg.status === 'not_sent' && (
+                      <button type="button" className="msg__retry" onClick={() => {
+                        restoreDraft(msg.text);
+                        composerRef.current?.focus();
+                      }}>Edit and resend</button>
+                    )}
                   </div>
                 </div>
               );

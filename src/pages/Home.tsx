@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSiteContent, pickMedia } from '../hooks/useSiteContent';
 import { useMediaPrefetch } from '../hooks/useMediaPrefetch';
 import { useDragScroll } from '../hooks/useDragScroll';
@@ -128,7 +128,9 @@ interface ProjectDetail {
   technologies?: string[];
   githubUrl?: string;
   demoUrl?: string;
-  videos?: { src_tag: string; poster_tag?: string; caption?: string }[];
+  /** `playback_bar`: show the browser's playback bar on that clip. Absent
+   *  (or anything but true / "true") means no bar. */
+  videos?: { src_tag: string; poster_tag?: string; caption?: string; playback_bar?: boolean | string }[];
 }
 
 interface JourneyBlock {
@@ -346,6 +348,37 @@ function JourneySheet({
   const title = detail?.heading ?? block?.title ?? '';
   const highlights = (detail?.highlights ?? []).filter(Boolean);
   const links = (detail?.links ?? []).filter(l => l && l.href);
+  const navigate = useNavigate();
+
+  /**
+   * An in-site link (e.g. "See my projects" -> /#projects) must close the
+   * sheet as well as go there -- otherwise the page scrolls behind a panel
+   * that still covers it.
+   *
+   * Order matters. Closing makes BottomSheet call history.back() to drop
+   * the entry it pushed on open; navigating first would have that Back
+   * undo our navigation. So: close, wait for that pop, then navigate.
+   * Blurring the link first stops the focus trap handing focus back to
+   * the Journey card on close, which would scroll the page back to it.
+   */
+  const goFromSheet = (link: HTMLElement, href: string) => {
+    link.blur();
+    const go = () => {
+      window.removeEventListener('popstate', go);
+      window.clearTimeout(fallback);
+      navigate(href);
+      // Home only scrolls when the hash CHANGES; do it here as well so a
+      // repeat visit to the same section still moves.
+      if (href.includes('#')) {
+        document.getElementById(href.split('#')[1])
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+    window.addEventListener('popstate', go);
+    // In case no pop arrives (the sheet's entry was already gone).
+    const fallback = window.setTimeout(go, 300);
+    onClose();
+  };
 
   return (
     <BottomSheet
@@ -389,7 +422,15 @@ function JourneySheet({
                   {l.label}
                 </a>
               ) : (
-                <NavLink key={i} className="btn btn-outline-primary btn-sm" to={href}>
+                <NavLink
+                  key={i}
+                  className="btn btn-outline-primary btn-sm"
+                  to={href}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    goFromSheet(e.currentTarget, href);
+                  }}
+                >
                   {l.label}
                 </NavLink>
               );
@@ -608,6 +649,7 @@ export default function Home() {
         srcUrl,
         posterUrl: v.poster_tag ? assetUrl(pickMedia(media, 'projects', v.poster_tag)) : undefined,
         caption: v.caption,
+        playbackBar: v.playback_bar === true || v.playback_bar === 'true',
       }];
     });
     setProjectSheet({
