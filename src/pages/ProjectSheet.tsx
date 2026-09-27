@@ -3,11 +3,14 @@ import Prose from '../components/Prose';
 import BottomSheet from '../components/BottomSheet';
 import TechStack from '../components/TechStack';
 import { safeHref } from '../lib/safeHref';
+import { usePhoneViewport } from '../hooks/usePhoneViewport';
 
 /** One feature-demo clip, already resolved to CDN URLs by Home. */
 export interface ProjectVideo {
   srcUrl: string;
   posterUrl?: string;
+  mobileSrcUrl?: string;
+  mobilePosterUrl?: string;
   caption?: string;
   /** Show the browser's own playback bar (seek, time, volume). Off by default. */
   playbackBar?: boolean;
@@ -72,6 +75,7 @@ export default function ProjectSheet({
   // as the IntersectionObserver root below. BottomSheet attaches it and
   // handles the reset-to-top on open.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isPhone = usePhoneViewport();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
   // Which clip is running right now, by index. Drives the overlay button's
@@ -110,8 +114,10 @@ export default function ProjectSheet({
   // render pass with a stale value painted in between, and is what
   // react-hooks/set-state-in-effect exists to catch.
   const [renderedFor, setRenderedFor] = useState(data);
-  if (data !== renderedFor) {
+  const [renderedPhone, setRenderedPhone] = useState(isPhone);
+  if (data !== renderedFor || isPhone !== renderedPhone) {
     setRenderedFor(data);
+    setRenderedPhone(isPhone);
     setPlayingIndex(null);
   }
 
@@ -122,7 +128,8 @@ export default function ProjectSheet({
   // before anything consults it.
   useEffect(() => {
     userPaused.current = new Set();
-  }, [data]);
+    autoPausing.current = new Set();
+  }, [data, isPhone]);
 
   const toggle = useCallback((i: number) => {
     const video = videoRefs.current[i];
@@ -221,7 +228,7 @@ export default function ProjectSheet({
         v.pause();
       });
     };
-  }, [open, data, autoPause]);
+  }, [open, data, autoPause, isPhone]);
 
   const githubUrl = safeHref(data?.githubUrl);
   const demoUrl = safeHref(data?.demoUrl);
@@ -301,10 +308,13 @@ export default function ProjectSheet({
       <div className="psheet__media">
         {data && data.videos.length > 0 ? (
           data.videos.map((v, i) => {
+            const mobile = isPhone && !!v.mobileSrcUrl;
+            const srcUrl = mobile ? v.mobileSrcUrl! : v.srcUrl;
+            const posterUrl = mobile ? v.mobilePosterUrl : v.posterUrl;
             const isPlaying = playingIndex === i;
             const name = v.caption || `Demo clip ${i + 1}`;
             return (
-              <figure key={i} className="psheet__video">
+              <figure key={`${i}:${srcUrl}`} className={`psheet__video${mobile ? ' psheet__video--mobile' : ''}`}>
                 {/* Left-aligned header above the clip. It IS the figure's
                     caption, just placed first -- so the frame below holds
                     only the video + overlay button, which keeps the
@@ -322,8 +332,8 @@ export default function ProjectSheet({
                       button then stops short of them (see Home.css). */}
                   <video
                     ref={el => { videoRefs.current[i] = el; }}
-                    src={v.srcUrl}
-                    poster={v.posterUrl}
+                    src={srcUrl}
+                    poster={posterUrl}
                     muted
                     playsInline
                     preload="metadata"

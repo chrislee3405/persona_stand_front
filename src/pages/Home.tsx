@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type C
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSiteContent, pickMedia } from '../hooks/useSiteContent';
 import { useMediaPrefetch } from '../hooks/useMediaPrefetch';
+import { usePhoneViewport } from '../hooks/usePhoneViewport';
 import { useDragScroll } from '../hooks/useDragScroll';
 import { useRevealOnScroll } from '../hooks/useRevealOnScroll';
 import { useActiveSection } from '../hooks/useActiveSection';
@@ -624,18 +625,22 @@ export default function Home() {
   // first interaction) so a project sheet opens with its lead video -- the
   // one that auto-plays -- already there. The rest stream on demand as the
   // viewer scrolls down to them. See useMediaPrefetch.
+  const isPhone = usePhoneViewport();
   const projectMediaUrls = useMemo(() => {
     const out: string[] = [];
     for (const p of projectItems) {
       const first = projectDetailMap[p.id]?.videos?.[0];
       if (!first) continue;
-      const src = first.src_tag ? assetUrl(pickMedia(media, 'projects', first.src_tag)) : undefined;
-      const poster = first.poster_tag ? assetUrl(pickMedia(media, 'projects', first.poster_tag)) : undefined;
+      const mobileSrc = isPhone && first.src_tag
+        ? assetUrl(pickMedia(media, 'projects', `${first.src_tag}_mob`)) : undefined;
+      const src = mobileSrc || (first.src_tag ? assetUrl(pickMedia(media, 'projects', first.src_tag)) : undefined);
+      const poster = first.poster_tag
+        ? assetUrl(pickMedia(media, 'projects', `${first.poster_tag}${mobileSrc ? '_mob' : ''}`)) : undefined;
       if (src) out.push(src);
       if (poster) out.push(poster);
     }
     return out;
-  }, [projectItems, projectDetailMap, media]);
+  }, [projectItems, projectDetailMap, media, isPhone]);
   useMediaPrefetch(projectMediaUrls);
   const openProjectSheet = (project: Project, detail: ProjectDetail) => {
     // Resolve video / poster tags to CDN URLs here so <ProjectSheet> stays
@@ -647,6 +652,8 @@ export default function Home() {
       if (!srcUrl) return [];
       return [{
         srcUrl,
+        mobileSrcUrl: assetUrl(pickMedia(media, 'projects', `${v.src_tag}_mob`)),
+        mobilePosterUrl: v.poster_tag ? assetUrl(pickMedia(media, 'projects', `${v.poster_tag}_mob`)) : undefined,
         posterUrl: v.poster_tag ? assetUrl(pickMedia(media, 'projects', v.poster_tag)) : undefined,
         caption: v.caption,
         playbackBar: v.playback_bar === true || v.playback_bar === 'true',
@@ -774,7 +781,9 @@ export default function Home() {
         </div>
       )}
 
-      <Prose text={statement.body} />
+      <div className="about__statement">
+        <Prose text={statement.body} />
+      </div>
 
       {/* Education moved up from its own section: a degree belongs beside
           who you are, not in a separate band. The remaining awards and

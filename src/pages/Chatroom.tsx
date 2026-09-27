@@ -408,9 +408,9 @@ export default function Chatroom() {
               }
               // User message (right) or AI reply (left, with tail).
               const isUser = msg.sender === 'user';
-              // Keep queued text visibly distinct until dispatch; legacy failure
-              // markers still show a failure note after a stored-tab upgrade.
-              const note = isUser && msg.status ? (msg.status === 'queued' ? 'Waiting to send' : '✕ Not sent') : null;
+              // Queued text is a normal part of sending. Only a failed send
+              // needs the red bubble and a visible status.
+              const note = isUser && msg.status === 'not_sent' ? '✕ Not sent' : null;
               return (
                 <div
                   key={msg.id}

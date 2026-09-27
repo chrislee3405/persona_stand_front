@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProjectSheet, { type ProjectSheetData } from '../pages/ProjectSheet';
+import { PHONE_VIEWPORT } from '../hooks/usePhoneViewport';
 
 /**
  * The scroll-driven playback rule: whatever is most in view plays, resumed
@@ -58,6 +59,58 @@ const DATA: ProjectSheetData = {
     { srcUrl: 'https://cdn.test/two.mp4', caption: 'Second' },
   ],
 };
+
+describe('responsive project videos', () => {
+  const responsive: ProjectSheetData = {
+    ...DATA,
+    videos: [{ ...DATA.videos[0], posterUrl: 'https://cdn.test/desktop.jpg',
+      mobileSrcUrl: 'https://cdn.test/phone.mp4', mobilePosterUrl: 'https://cdn.test/phone.jpg' },
+    DATA.videos[1]],
+  };
+
+  function viewport(initial: boolean) {
+    let phone = initial;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === PHONE_VIEWPORT && phone,
+      addEventListener: (_: string, fn: () => void) => { if (query === PHONE_VIEWPORT) listeners.add(fn); },
+      removeEventListener: (_: string, fn: () => void) => { listeners.delete(fn); },
+    }));
+    return (value: boolean) => act(() => { phone = value; listeners.forEach(fn => fn()); });
+  }
+
+  it('uses the phone clip and poster, with desktop fallback for clips without a variant', () => {
+    viewport(true);
+    render(<ProjectSheet open data={responsive} onClose={() => {}} />);
+    expect(videos()[0]).toHaveAttribute('src', 'https://cdn.test/phone.mp4');
+    expect(videos()[0]).toHaveAttribute('poster', 'https://cdn.test/phone.jpg');
+    expect(videos()[0].closest('figure')).toHaveClass('psheet__video--mobile');
+    expect(videos()[1]).toHaveAttribute('src', DATA.videos[1].srcUrl);
+    expect(videos()[1].closest('figure')).not.toHaveClass('psheet__video--mobile');
+  });
+
+  it('switches sources and reconnects playback observation on viewport changes', () => {
+    const resize = viewport(false);
+    render(<ProjectSheet open data={responsive} onClose={() => {}} />);
+    expect(videos()[0]).toHaveAttribute('src', DATA.videos[0].srcUrl);
+    show(1, 0);
+    const desktop = videos()[0];
+    resize(true);
+    expect(desktop.paused).toBe(true);
+    expect(videos()[0]).toHaveAttribute('src', 'https://cdn.test/phone.mp4');
+    expect(observed).toContain(videos()[0]);
+    show(1, 0);
+    expect(videos()[0].paused).toBe(false);
+    resize(false);
+    expect(videos()[0]).toHaveAttribute('poster', 'https://cdn.test/desktop.jpg');
+  });
+
+  it('does not display a landscape poster over a phone clip when its poster is missing', () => {
+    viewport(true);
+    render(<ProjectSheet open data={{ ...responsive, videos: [{ ...responsive.videos[0], mobilePosterUrl: undefined }] }} onClose={() => {}} />);
+    expect(videos()[0]).not.toHaveAttribute('poster');
+  });
+});
 
 beforeEach(() => {
   observed = [];
