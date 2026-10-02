@@ -278,7 +278,7 @@ export const TYPING_IDLE_MS = 5000;
  *  NO_REPLY_NOTICE_IDLE_MS: after a "no_reply" -- nothing needed an answer --
  *                   how long before a quiet "Seen" notice explains the
  *                   silence, for a visitor who is still waiting on a reply. */
-export const WAIT_CONTINUE_IDLE_MS = 12000;
+export const WAIT_CONTINUE_IDLE_MS = 10000;
 export const NO_REPLY_NOTICE_IDLE_MS = 10000;
 
 /** "Persona is typing" three-dot bubble timing. The bubble is never shown

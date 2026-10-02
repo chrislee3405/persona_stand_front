@@ -12,7 +12,7 @@ export interface ProjectVideo {
   mobileSrcUrl?: string;
   mobilePosterUrl?: string;
   caption?: string;
-  /** Show the browser's own playback bar (seek, time, volume). Off by default. */
+  /** Show playback controls; phones use a seek bar below the unobscured picture. */
   playbackBar?: boolean;
 }
 
@@ -81,6 +81,13 @@ export default function ProjectSheet({
   // Which clip is running right now, by index. Drives the overlay button's
   // icon and label; `null` means nothing is playing.
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const [progress, setProgress] = useState<Record<string, { time: number; duration: number }>>({});
+  const updateProgress = (source: string, video: HTMLVideoElement) => {
+    setProgress(current => ({ ...current, [source]: {
+      time: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+      duration: Number.isFinite(video.duration) ? video.duration : 0,
+    } }));
+  };
   // Clips the VISITOR paused by pressing the overlay button. A ref, not
   // state: it must not trigger a render, and it must survive the observer
   // re-firing as the column is scrolled back and forth.
@@ -116,6 +123,7 @@ export default function ProjectSheet({
   const [renderedFor, setRenderedFor] = useState(data);
   const [renderedPhone, setRenderedPhone] = useState(isPhone);
   if (data !== renderedFor || isPhone !== renderedPhone) {
+    if (data !== renderedFor) setProgress({});
     setRenderedFor(data);
     setRenderedPhone(isPhone);
     setPlayingIndex(null);
@@ -312,9 +320,11 @@ export default function ProjectSheet({
             const srcUrl = mobile ? v.mobileSrcUrl! : v.srcUrl;
             const posterUrl = mobile ? v.mobilePosterUrl : v.posterUrl;
             const isPlaying = playingIndex === i;
+            const nativeControls = !!v.playbackBar && !isPhone;
+            const position = progress[srcUrl] ?? { time: 0, duration: 0 };
             const name = v.caption || `Demo clip ${i + 1}`;
             return (
-              <figure key={`${i}:${srcUrl}`} className={`psheet__video${mobile ? ' psheet__video--mobile' : ''}`}>
+              <figure key={`${i}:${srcUrl}`} className={`psheet__video${mobile ? ' psheet__video--mobile' : ''}${isPhone ? ' psheet__video--phone' : ''}`}>
                 {/* Left-aligned header above the clip. It IS the figure's
                     caption, just placed first -- so the frame below holds
                     only the video + overlay button, which keeps the
@@ -322,12 +332,12 @@ export default function ProjectSheet({
                 {v.caption && (
                   <figcaption className="psheet__video-head">{v.caption}</figcaption>
                 )}
-                <div className={`psheet__video-frame${v.playbackBar ? ' has-playback-bar' : ''}`}>
+                <div className={`psheet__video-frame${nativeControls ? ' has-playback-bar' : ''}`}>
                   {/* preload="metadata": first frame + duration on mount so
                       there's no black box; the full clip is usually already
                       cache-warmed by useMediaPrefetch, else it streams here.
                       No `loop` -- see the component docstring.
-                      With `playbackBar` the native controls are shown and
+                      On desktop, `playbackBar` shows native controls,
                       reachable by keyboard / screen reader; the overlay
                       button then stops short of them (see Home.css). */}
                   <video
@@ -337,9 +347,12 @@ export default function ProjectSheet({
                     muted
                     playsInline
                     preload="metadata"
-                    controls={v.playbackBar}
-                    tabIndex={v.playbackBar ? undefined : -1}
-                    aria-hidden={v.playbackBar ? undefined : 'true'}
+                    controls={nativeControls}
+                    tabIndex={nativeControls ? undefined : -1}
+                    aria-hidden={nativeControls ? undefined : 'true'}
+                    onLoadedMetadata={v.playbackBar ? event => updateProgress(srcUrl, event.currentTarget) : undefined}
+                    onDurationChange={v.playbackBar ? event => updateProgress(srcUrl, event.currentTarget) : undefined}
+                    onTimeUpdate={v.playbackBar ? event => updateProgress(srcUrl, event.currentTarget) : undefined}
                     onPlay={() => onVideoPlay(i)}
                     onPause={() => onVideoPause(i)}
                     onEnded={() => setPlayingIndex(cur => (cur === i ? null : cur))}
@@ -354,9 +367,28 @@ export default function ProjectSheet({
                     aria-label={isPlaying ? `Pause ${name}` : `Play ${name}`}
                     onClick={() => toggle(i)}
                   >
-                    <span className="psheet__video-icon" aria-hidden="true" />
+                    {(!isPhone || !isPlaying) && <span className="psheet__video-icon" aria-hidden="true" />}
                   </button>
                 </div>
+                {isPhone && v.playbackBar && (
+                  <input
+                    className="psheet__video-seek"
+                    type="range"
+                    aria-label={`Seek ${name}`}
+                    aria-valuetext={`${Math.floor(position.time)} of ${Math.floor(position.duration)} seconds`}
+                    min={0}
+                    max={position.duration || 1}
+                    step={0.1}
+                    value={Math.min(position.time, position.duration)}
+                    disabled={!position.duration}
+                    onChange={event => {
+                      const video = videoRefs.current[i];
+                      if (!video) return;
+                      video.currentTime = Number(event.currentTarget.value);
+                      updateProgress(srcUrl, video);
+                    }}
+                  />
+                )}
               </figure>
             );
           })

@@ -7,8 +7,8 @@ import { safeHref } from '../lib/safeHref';
 interface FooterContent {
   /** Name in the copyright line. Falls back to personal_statement.owner. */
   owner?: string;
-  /** One short line beside it, e.g. what the site is built with. */
-  note?: string;
+  /** Display release label from the database, e.g. v1.0.3. */
+  version?: string;
   /** Links shown on the right. Falls back to contact.links, so the two
    *  don't have to be maintained twice. */
   links?: { label: string; href: string }[];
@@ -30,6 +30,7 @@ function Footer() {
 
   const name = footer.owner ?? owner;
   const links = footer.links ?? contactLinks ?? [];
+  const version = typeof footer.version === 'string' ? footer.version.trim() : '';
 
   return (
     <div className="container">
@@ -39,7 +40,7 @@ function Footer() {
           <span className="site-footer__copy">
             © {new Date().getFullYear()}{name ? ` ${name}` : ''}
           </span>
-          {footer.note && <span className="site-footer__note">{footer.note}</span>}
+          {version && <span className="site-footer__note">{version}</span>}
         </div>
 
         {links.length > 0 && (

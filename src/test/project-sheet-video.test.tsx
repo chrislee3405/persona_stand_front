@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProjectSheet, { type ProjectSheetData } from '../pages/ProjectSheet';
 import { PHONE_VIEWPORT } from '../hooks/usePhoneViewport';
@@ -109,6 +109,47 @@ describe('responsive project videos', () => {
     viewport(true);
     render(<ProjectSheet open data={{ ...responsive, videos: [{ ...responsive.videos[0], mobilePosterUrl: undefined }] }} onClose={() => {}} />);
     expect(videos()[0]).not.toHaveAttribute('poster');
+  });
+
+  it('keeps tap-to-pause but only mounts the centre symbol while paused on phones', () => {
+    viewport(true);
+    render(<ProjectSheet open data={responsive} onClose={() => {}} />);
+    show(1, 0);
+    const button = screen.getByRole('button', { name: 'Pause First' });
+    expect(button.querySelector('.psheet__video-icon')).toBeNull();
+    fireEvent.click(button);
+    expect(videos()[0].paused).toBe(true);
+    expect(screen.getByRole('button', { name: 'Play First' }).querySelector('.psheet__video-icon')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Play First' }));
+    expect(videos()[0].paused).toBe(false);
+    expect(screen.getByRole('button', { name: 'Pause First' }).querySelector('.psheet__video-icon')).toBeNull();
+  });
+
+  it('replaces native phone controls with an external seek bar even for a desktop fallback clip', () => {
+    const resize = viewport(true);
+    render(<ProjectSheet open data={{ ...DATA, videos: [{ ...DATA.videos[0], playbackBar: true }] }} onClose={() => {}} />);
+    const video = videos()[0];
+    expect(video.controls).toBe(false);
+    expect(video.closest('.psheet__video-frame')).not.toHaveClass('has-playback-bar');
+    const seek = screen.getByRole('slider', { name: 'Seek First' });
+    expect(seek).toBeDisabled();
+    Object.defineProperty(video, 'duration', { configurable: true, value: 60 });
+    fireEvent.loadedMetadata(video);
+    expect(seek).not.toBeDisabled();
+    show(1);
+    fireEvent.change(seek, { target: { value: '20' } });
+    expect(video.currentTime).toBe(20);
+    expect(video.paused).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Pause First' }));
+    fireEvent.change(seek, { target: { value: '30' } });
+    expect(video.currentTime).toBe(30);
+    expect(video.paused).toBe(true);
+    resize(false);
+    expect(videos()[0].controls).toBe(true);
+    expect(screen.queryByRole('slider', { name: 'Seek First' })).toBeNull();
+    resize(true);
+    expect(screen.getByRole('slider', { name: 'Seek First' })).not.toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Seek First' })).toHaveValue('30');
   });
 });
 

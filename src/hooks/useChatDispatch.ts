@@ -511,6 +511,7 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired, pers
         !Array.isArray(data.turns) ||
         (repliesExpected && data.turns.length === 0) ||
         !data.turns.every((turn: unknown) => typeof turn === 'string' && turn.trim()) ||
+        (data.systemNotice != null && (typeof data.systemNotice !== 'string' || !data.systemNotice.trim())) ||
         typeof data.conversationId !== 'string'
       ) {
         throw new Error(`Malformed response: ${JSON.stringify(data)}`);
@@ -614,6 +615,10 @@ export function useChatDispatch({ consented, isVerified, onConsentRequired, pers
         }
         const turnMessage = createMessage(turns[i], turnSender);
         setMessages(prev => [...prev, turnMessage]);
+      }
+      if (data.systemNotice) {
+        const notice = createMessage(data.systemNotice, 'system');
+        setMessages(prev => [...prev, notice]);
       }
 
 

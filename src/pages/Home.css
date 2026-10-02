@@ -2070,6 +2070,21 @@
   outline: 3px solid var(--brand-accent, #f08000);
   outline-offset: 3px;
 }
+.psheet__video--phone .psheet__video-btn {
+  /* A full-frame touch target must not paint the browser's dark tap flash. */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.psheet__video--phone .psheet__video-btn:is(:hover, :active, :focus) {
+  background: transparent;
+}
+.psheet__video-seek {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  accent-color: var(--brand-accent, #f08000);
+}
 
 /* One element, two glyphs: a right-pointing triangle (replay) drawn with
    borders, swapped for two bars (pause) while the clip runs. */

@@ -50,6 +50,21 @@ function requestBody(index = 0) {
 describe('chat dispatch', () => {
   beforeEach(() => vi.useFakeTimers());
 
+  it('shows a missing-facts notice separately without marking the question unsent', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({
+      turns: ["I don't have that information for now."], sender: 'backend', status: 'respond',
+      conversationId: 'test-conversation', userMessageKept: true,
+      systemNotice: 'No supporting information was found about career plans. Please contact Chris.',
+    }));
+    const { result } = renderDispatch();
+    submit(result, 'What are your five-year plans?');
+    await advance();
+    const exchange = result.current.chat.messages.slice(-3);
+    expect(exchange.map(m => m.sender)).toEqual(['user', 'backend', 'system']);
+    expect(exchange[0].status).toBeUndefined();
+    expect(exchange[2].text).toContain('contact Chris');
+  });
+
   it('flushes a full batch before accepting another valid fragment', async () => {
     vi.mocked(fetch).mockResolvedValue(reply());
     const { result } = renderDispatch();
