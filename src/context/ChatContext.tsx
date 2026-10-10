@@ -129,6 +129,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     () => readStoredString('chat_conversationId'),
   );
 
+  // Keep the reference as a local system turn at the moment it becomes known.
+  // Its stable ID prevents duplicate notices on rerenders and page reloads.
+  const referenceMessageId = `conversation-reference:${conversationId}`;
+  if (conversationId && !messages.some(message => message.id === referenceMessageId)) {
+    setMessages([...messages, {
+      id: referenceMessageId,
+      sender: 'system',
+      text: `Conversation reference (quote it to request deletion): ${conversationId}`,
+    }]);
+  }
+
   useEffect(() => {
     writeStored('chat_messages', JSON.stringify(messages.slice(-MAX_STORED_MESSAGES)));
   }, [messages]);

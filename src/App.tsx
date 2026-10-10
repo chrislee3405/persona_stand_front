@@ -1,5 +1,6 @@
-import { lazy, Suspense } from 'react'
-import { createBrowserRouter, RouterProvider, Outlet, Navigate } from 'react-router-dom' // for direct to diff pages
+import { lazy, Suspense, useRef } from 'react'
+import { createBrowserRouter, RouterProvider, Outlet, Navigate, useLocation } from 'react-router-dom' // for direct to diff pages
+import { useChatViewport } from './hooks/useChatViewport'
 
 import { SECTIONS, RETIRED_SECTIONS } from './lib/knobs.ts'
 
@@ -30,7 +31,7 @@ const Chatroom = lazy(() => import('./pages/Chatroom.tsx'))
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <RootLayout />, // Always keeps Navbar and Footer visible
+    element: <RootLayout />,
     // Catches anything thrown while rendering any child route. Without it
     // React Router falls back to its own default boundary, which ships in
     // the production build and prints a raw stack trace at the visitor --
@@ -74,14 +75,18 @@ const router = createBrowserRouter([
 
 // Global Layout Wrapper
 function RootLayout() {
+  const isChatroom = useLocation().pathname.replace(/\/$/, '') === '/chatroom';
+  const shellRef = useRef<HTMLDivElement>(null);
+  useChatViewport(shellRef, isChatroom);
   return (
     <ActiveSectionProvider>
+      <div ref={shellRef} className={isChatroom ? 'site-layout site-layout--chat' : 'site-layout'}>
       <ScrollToTop />
       {/* First thing in the tab order: lets keyboard and screen-reader users
           jump the six nav items straight to the content. Visually hidden
           until focused (see .skip-link). */}
       <a className="skip-link" href="#main">Skip to content</a>
-      <Navbar />
+      <div className="site-navigation"><Navbar /></div>
       {/* <main> so assistive tech has a "main content" landmark to jump to --
           this was a plain <div> and the document had no landmark at all. */}
       <main id="main" className="container py-4 px-3 mx-auto" style={{ minHeight: '80vh' }}>
@@ -94,11 +99,12 @@ function RootLayout() {
           <Outlet /> {/* <-- This is the window where the pages swap out! */}
         </Suspense>
       </main>
-      <Footer />
+      <div className="site-footer-container"><Footer /></div>
       {/* Outside the page container on purpose: it is position:fixed, and a
           transformed/filtered ancestor would make it fixed to THAT box
           instead of the viewport. Hides itself on /chatroom. */}
       <ChatLauncher />
+      </div>
     </ActiveSectionProvider>
   )
 }

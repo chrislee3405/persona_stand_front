@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BaseSyntheticEvent, KeyboardEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useChat } from '../hooks/useChat';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useChatroomInitialize } from '../hooks/useChatroomInitialize';
@@ -7,6 +8,7 @@ import { useConsent } from '../hooks/useConsent';
 import { useInviteCode } from '../hooks/useInviteCode';
 import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
 import { useShrinkWrapBubbles } from '../hooks/useShrinkWrapBubbles';
+import { useBubbleEntrance } from '../hooks/useBubbleEntrance';
 import { useSiteContent, pickMedia } from '../hooks/useSiteContent';
 import Prose from '../components/Prose';
 import { assetUrl } from '../lib/assetUrl';
@@ -43,9 +45,8 @@ const CONSENT_TEXT_UNAVAILABLE = "Consent terms are currently unavailable. Pleas
 
 export default function Chatroom() {
   // The running message list (persisted in ChatContext across refreshes), and
-  // the backend-assigned conversation id -- shown under the card as the
-  // reference a visitor quotes when asking the site owner to delete it.
-  const { messages, conversationId } = useChat();
+  // local system turn containing the backend-assigned conversation reference.
+  const { messages } = useChat();
 
   // Header name, from site_content section "chatroom". Falls back to the
   // site owner's name, so a deployment that never adds a chatroom row
@@ -166,14 +167,15 @@ export default function Chatroom() {
 
   // Auto-stick to the bottom as new bubbles (and the notice) arrive.
   const scrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, warningMessage, isAwaitingReply]);
 
   // A wrapped bubble otherwise stretches to its max-width, leaving an empty
   // strip beside the text.
   useShrinkWrapBubbles(scrollRef, messages);
+  useBubbleEntrance(scrollRef, messages);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [warningMessage, isAwaitingReply]);
 
   // Grow the composer to fit its wrapped text: reset to auto, then to the
   // content height. CSS `max-height` caps it at ~4 lines and turns on the
@@ -221,8 +223,27 @@ export default function Chatroom() {
     }
   };
 
+  const conversationMeta = ((consented === true || withdrawError) && (
+        <div className="chatroom-meta">
+          {consented === true && (
+            <button
+              type="button"
+              className="chatroom-meta__withdraw"
+              onClick={onWithdrawConsent}
+              disabled={isWithdrawingConsent}
+            >
+              {isWithdrawingConsent ? 'Withdrawing…' : 'Disagree with consent'}
+            </button>
+          )}
+          {withdrawError && (
+            <p className="chatroom-meta__error" role="alert">{withdrawError}</p>
+          )}
+        </div>
+      )
+  );
+
   return (
-    <>
+    <div className="chatroom-page">
       <div className="chatroom">
         {/* Consent popup. Dismissible via "I Don't Agree" (the visitor can then
             browse the chatroom), but any send attempt brings it back until
@@ -303,6 +324,9 @@ export default function Chatroom() {
         )}
 
         <header className="chatroom__header">
+          <Link className="chatroom__back" to="/" aria-label="Back to home">
+            <span aria-hidden="true">&lt;</span>
+          </Link>
           {avatarUrl && !avatarBroken ? (
             <img
               className="chatroom__avatar"
@@ -398,7 +422,7 @@ export default function Chatroom() {
               // System / error notice -- centred yellow bubble, no tail.
               if (msg.sender === 'system') {
                 return (
-                  <div key={msg.id} className="msg msg--sys">
+                  <div key={msg.id} data-message-id={msg.id} className="msg msg--sys">
                     <div className="msg__bubble msg__bubble--sys">
                       <span className="visually-hidden">System: </span>
                       <span className="msg__text">{msg.text}</span>
@@ -408,17 +432,22 @@ export default function Chatroom() {
               }
               // User message (right) or AI reply (left, with tail).
               const isUser = msg.sender === 'user';
+              // Split turns retain separator newlines for the original reply.
+              // Bubble edges provide that separation visually; keep only
+              // paragraph breaks inside each displayed persona turn.
+              const displayText = isUser ? msg.text : msg.text.trim();
               // Queued text is a normal part of sending. Only a failed send
               // needs the red bubble and a visible status.
               const note = isUser && msg.status === 'not_sent' ? '✕ Not sent' : null;
               return (
                 <div
                   key={msg.id}
+                  data-message-id={msg.id}
                   className={`msg ${isUser ? 'msg--out' : 'msg--in'}${note ? ' msg--blocked' : ''}`}
                 >
                   <div className="msg__bubble">
                     <span className="visually-hidden">{isUser ? 'You: ' : 'Persona: '}</span>
-                    <span className="msg__text">{msg.text}</span>
+                    <span className="msg__text">{displayText}</span>
                     {note && <span className="msg__blocked-note">{note}</span>}
                     {isUser && msg.status === 'not_sent' && (
                       <button type="button" className="msg__retry" onClick={() => {
@@ -495,37 +524,8 @@ export default function Chatroom() {
         </form>
       </div>
 
-      {/* Under the card, deliberately quiet: small grey text, not part of
-          the chat chrome. Rendered only when there is something to show. */}
-      {(conversationId || consented === true || withdrawError) && (
-        <div className="chatroom-meta">
-          {/* The conversation's own id, which is random and says nothing about
-              who the visitor is. There is no self-service deletion; quoting
-              this to the site owner is how a visitor asks for the
-              conversation to be removed. `user-select: all` so one click
-              selects the whole value -- a copy button would need the
-              Clipboard API, which browsers withhold on plain http. */}
-          {conversationId && (
-            <p className="chatroom-meta__ref">
-              Conversation reference (quote it to request deletion):{' '}
-              <code className="chatroom-meta__ref-id">{conversationId}</code>
-            </p>
-          )}
-          {consented === true && (
-            <button
-              type="button"
-              className="chatroom-meta__withdraw"
-              onClick={onWithdrawConsent}
-              disabled={isWithdrawingConsent}
-            >
-              {isWithdrawingConsent ? 'Withdrawing…' : 'Disagree with consent'}
-            </button>
-          )}
-          {withdrawError && (
-            <p className="chatroom-meta__error" role="alert">{withdrawError}</p>
-          )}
-        </div>
-      )}
-    </>
+      {conversationMeta}
+
+    </div>
   );
 }

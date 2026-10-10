@@ -2,6 +2,28 @@
 
 # current version 1.1.0
 
+## Local setup and configuration
+
+Keep this repository beside `persona_stand_back`. Copy `.env.example` to `.env`
+and set `VITE_CDN_BASE` to your HTTPS media base URL, without a trailing slash.
+This value is public and compiled into the bundle; provider keys and database
+credentials belong only in the backend environment. There is no `VITE_API_URL`:
+Vite and nginx proxy relative `/api/` requests to the backend.
+
+```sh
+npm ci
+npm run dev
+```
+
+Run the backend's full Docker stack first, then open `http://localhost:5173` for
+frontend hot reload, or `http://localhost` for the built nginx site. Local AI
+credentials, automatic seeding and provider/model selection are covered in
+[Part B](https://github.com/chrislee3405/persona_stand_ec2yml/blob/main/Part_B.md).
+The public clone contains no personal site content; load approved private seeds
+through the backend instructions. After changing `VITE_CDN_BASE`, restart Vite
+or rebuild the frontend image. Runtime EC2 environment changes cannot alter the
+already-built frontend bundle.
+
 ## Automated tests
 
 See [TESTING.md](TESTING.md) for beginner instructions, test files, and the

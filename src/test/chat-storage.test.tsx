@@ -16,10 +16,32 @@ describe('chat persistence', () => {
     });
     first.unmount();
     const reloaded = renderHook(() => useChat(), { wrapper: ChatProvider });
-    expect(reloaded.result.current.messages).toEqual(messages);
+    expect(reloaded.result.current.messages.slice(0, messages.length)).toEqual(messages);
+    expect(reloaded.result.current.messages.filter(message => message.id === 'conversation-reference:test-conversation'))
+      .toEqual([{
+        id: 'conversation-reference:test-conversation', sender: 'system',
+        text: 'Conversation reference (quote it to request deletion): test-conversation',
+      }]);
     expect(reloaded.result.current.conversationId).toBe('test-conversation');
     act(() => reloaded.result.current.setConversationId(null));
     expect(sessionStorage.getItem('chat_conversationId')).toBeNull();
+  });
+
+  it('adds the reference once when assigned and leaves it in its place as the chat continues', () => {
+    const { result } = renderHook(() => useChat(), { wrapper: ChatProvider });
+    expect(result.current.messages.some(message => message.id.startsWith('conversation-reference:'))).toBe(false);
+    act(() => result.current.setConversationId('assigned-reference'));
+    const referenceIndex = result.current.messages.findIndex(message => message.id === 'conversation-reference:assigned-reference');
+    expect(referenceIndex).toBeGreaterThanOrEqual(0);
+    act(() => {
+      result.current.setMessages(previous => [...previous, { id: 'next', sender: 'backend', text: 'Next reply' }]);
+      result.current.setConversationId('assigned-reference');
+    });
+    expect(result.current.messages[referenceIndex]).toMatchObject({
+      sender: 'system', text: 'Conversation reference (quote it to request deletion): assigned-reference',
+    });
+    expect(result.current.messages.filter(message => message.id.startsWith('conversation-reference:'))).toHaveLength(1);
+    expect(result.current.messages.at(-1)?.id).toBe('next');
   });
 
   it.each(['{broken json', 'null', '[{"sender":"unknown"}]'])(

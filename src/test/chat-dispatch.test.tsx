@@ -25,6 +25,12 @@ function renderDispatch(consented: boolean | null = true, personaName = '') {
 
 type DispatchResult = ReturnType<typeof renderDispatch>['result'];
 
+// Delivery assertions exclude the local reference notice, which is covered
+// separately by the persistence tests and still appears in the actual history.
+function deliveryMessages(result: DispatchResult) {
+  return result.current.chat.messages.filter(message => !message.id.startsWith('conversation-reference:'));
+}
+
 function typeMessage(result: DispatchResult, text: string) {
   act(() => result.current.handleInputChange({ target: { value: text } } as ChangeEvent<HTMLTextAreaElement>));
 }
@@ -59,7 +65,7 @@ describe('chat dispatch', () => {
     const { result } = renderDispatch();
     submit(result, 'What are your five-year plans?');
     await advance();
-    const exchange = result.current.chat.messages.slice(-3);
+    const exchange = deliveryMessages(result).slice(-3);
     expect(exchange.map(m => m.sender)).toEqual(['user', 'backend', 'system']);
     expect(exchange[0].status).toBeUndefined();
     expect(exchange[2].text).toContain('contact Chris');
@@ -168,7 +174,7 @@ describe('chat dispatch', () => {
       method: 'POST', credentials: 'include', signal: expect.any(AbortSignal),
     }));
     expect(requestBody()).toEqual({ text: 'Tell me about your projects' });
-    expect(result.current.chat.messages.at(-1)).toMatchObject({ sender: 'backend', text: 'Test response' });
+    expect(deliveryMessages(result).at(-1)).toMatchObject({ sender: 'backend', text: 'Test response' });
     expect(result.current.chat.conversationId).toBe('test-conversation');
   });
 
@@ -283,7 +289,7 @@ describe('chat dispatch', () => {
     submit(result, 'A question');
     await advance();
     expect(result.current.chat.messages.find(message => message.text === 'A question')?.status).toBe('not_sent');
-    expect(result.current.chat.messages.at(-1)).toMatchObject({ sender: 'system', text: 'Unable to answer this test turn.' });
+    expect(deliveryMessages(result).at(-1)).toMatchObject({ sender: 'system', text: 'Unable to answer this test turn.' });
     expect(JSON.parse(sessionStorage.getItem('chat_messages')!)).toEqual(result.current.chat.messages);
   });
 
@@ -311,8 +317,9 @@ describe('chat dispatch', () => {
       // not crossed out, and not sent a second time.
       const bubble = result.current.chat.messages.find(m => m.text === 'two questions, first');
       expect(bubble?.status).toBeUndefined();
-      // The user's own bubble is the only thing added: no reply, no notice.
-      expect(result.current.chat.messages.length).toBe(before + 1);
+      // No generated reply; the user's bubble and the newly assigned reference appear.
+      expect(deliveryMessages(result).length).toBe(before + 1);
+      expect(result.current.chat.messages.filter(message => message.id === 'conversation-reference:test-conversation')).toHaveLength(1);
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(result.current.isAwaitingReply).toBe(false);
     },
@@ -388,7 +395,7 @@ describe('chat dispatch', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(result.current.isAwaitingReply).toBe(false);
-    expect(result.current.chat.messages.at(-1)).toMatchObject({ sender: 'backend', text: 'I studied IT.' });
+    expect(deliveryMessages(result).at(-1)).toMatchObject({ sender: 'backend', text: 'I studied IT.' });
   });
   // --- A rejected message and the turn before it ----------------------------
   // "wait" means the persona is holding that message until the visitor
@@ -632,7 +639,7 @@ describe('chat dispatch', () => {
     await advance();
 
     await advance(NO_REPLY_NOTICE_IDLE_MS - 1);
-    expect(result.current.chat.messages.at(-1)).toMatchObject({ sender: 'user', text: 'ok thanks' });
+    expect(deliveryMessages(result).at(-1)).toMatchObject({ sender: 'user', text: 'ok thanks' });
     await advance(1);
 
     expect(result.current.chat.messages.at(-1)).toMatchObject({
