@@ -376,7 +376,7 @@
 .cred__item {
   position: relative;
   padding: 0.8rem 1rem 0.8rem 1.15rem;
-  border: 1px solid var(--bs-border-color, #dee2e6);
+  border: 1px solid transparent;
   border-radius: 0.6rem;
   background: var(--bs-body-bg, #fff);
   overflow: hidden;   /* clips the accent bar to the rounded corners */
@@ -391,6 +391,17 @@
   bottom: 0;
   width: 3px;
   background: var(--brand-accent, #f08000);
+}
+/* Fade only the outline, keeping credential text and dates fully visible. */
+.cred__item::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: inherit;
+  -webkit-mask-image: linear-gradient(to right, #000 35%, transparent 95%);
+  mask-image: linear-gradient(to right, #000 35%, transparent 95%);
+  pointer-events: none;
 }
 .cred__head {
   display: flex;

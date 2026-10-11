@@ -9,6 +9,7 @@ import { useInviteCode } from '../hooks/useInviteCode';
 import { useChatDispatch, MAX_MESSAGE_LENGTH } from '../hooks/useChatDispatch';
 import { useShrinkWrapBubbles } from '../hooks/useShrinkWrapBubbles';
 import { useBubbleEntrance } from '../hooks/useBubbleEntrance';
+import { useComposerAutoScroll } from '../hooks/useComposerAutoScroll';
 import { useSiteContent, pickMedia } from '../hooks/useSiteContent';
 import Prose from '../components/Prose';
 import { assetUrl } from '../lib/assetUrl';
@@ -182,6 +183,7 @@ export default function Chatroom() {
   // internal scrollbar past that. Runs on every value change (including the
   // reset to '' after a send, which snaps it back to one line).
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  useComposerAutoScroll(scrollRef, composerRef);
   useLayoutEffect(() => {
     const el = composerRef.current;
     if (!el) return;

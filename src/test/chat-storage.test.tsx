@@ -44,6 +44,36 @@ describe('chat persistence', () => {
     expect(result.current.messages.at(-1)?.id).toBe('next');
   });
 
+  it('places the reference before a first reply batched with its assigned ID', () => {
+    const { result } = renderHook(() => useChat(), { wrapper: ChatProvider });
+    act(() => {
+      result.current.setMessages(previous => [...previous,
+        { id: 'question', sender: 'user', text: 'Tell me about yourself.' },
+        { id: 'reply', sender: 'backend', text: 'My first reply.' },
+      ]);
+      result.current.setConversationId('batched-reference');
+    });
+    expect(result.current.messages.map(message => message.id)).toEqual([
+      'welcome-1', 'welcome-2', 'question', 'conversation-reference:batched-reference', 'reply',
+    ]);
+  });
+
+  it('moves an older persisted reference ahead of the first reply without duplicating it', () => {
+    sessionStorage.setItem('chat_conversationId', 'saved-reference');
+    sessionStorage.setItem('chat_messages', JSON.stringify([
+      { id: 'question', sender: 'user', text: 'Tell me about yourself.' },
+      { id: 'reply', sender: 'backend', text: 'My first reply.' },
+      { id: 'conversation-reference:saved-reference', sender: 'system',
+        text: 'Conversation reference (quote it to request deletion): saved-reference' },
+    ]));
+    const { result } = renderHook(() => useChat(), { wrapper: ChatProvider });
+    expect(result.current.messages.map(message => message.id)).toEqual([
+      'question', 'conversation-reference:saved-reference', 'reply',
+    ]);
+    expect(JSON.parse(sessionStorage.getItem('chat_messages')!).map((message: Message) => message.id))
+      .toEqual(['question', 'conversation-reference:saved-reference', 'reply']);
+  });
+
   it.each(['{broken json', 'null', '[{"sender":"unknown"}]'])(
     'recovers a usable chat from invalid stored data: %s', (saved) => {
       sessionStorage.setItem('chat_messages', saved);

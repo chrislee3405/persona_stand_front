@@ -129,15 +129,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     () => readStoredString('chat_conversationId'),
   );
 
-  // Keep the reference as a local system turn at the moment it becomes known.
-  // Its stable ID prevents duplicate notices on rerenders and page reloads.
+  // React can batch the assigned ID and first reply into the same render.
+  // Place the reference before that reply, retaining the initial greeting.
+  // Also repair the order of references persisted by earlier versions.
   const referenceMessageId = `conversation-reference:${conversationId}`;
-  if (conversationId && !messages.some(message => message.id === referenceMessageId)) {
-    setMessages([...messages, {
+  const referenceIndex = messages.findIndex(message => message.id === referenceMessageId);
+  const firstReplyIndex = messages.findIndex(message =>
+    message.sender === 'backend' && message.id !== 'welcome-2',
+  );
+  if (conversationId && (referenceIndex === -1 || (firstReplyIndex !== -1 && referenceIndex > firstReplyIndex))) {
+    const orderedMessages = messages.filter(message => message.id !== referenceMessageId);
+    const insertionIndex = firstReplyIndex === -1 ? orderedMessages.length : firstReplyIndex;
+    orderedMessages.splice(insertionIndex, 0, {
       id: referenceMessageId,
       sender: 'system',
       text: `Conversation reference (quote it to request deletion): ${conversationId}`,
-    }]);
+    });
+    setMessages(orderedMessages);
   }
 
   useEffect(() => {
